@@ -1,0 +1,17 @@
+{
+  "id": "/wardogs-hex/",
+  "name": "Hundemarke",
+  "short_name": "Hundemarke",
+  "description": "Rundenstrategie um die Control Zone — Wardogs-Spin-off von Sandthron",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0c0f0a",
+  "theme_color": "#10140e",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#10140e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Hundemarke</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+  <div id="vignette"></div>
+
+  <header id="topbar">
+    <button id="gamemenu" title="Menü">☰</button>
+    <div class="brand"><span id="mycrest"></span>HUNDEMARKE</div>
+    <div class="stat"><span class="lbl">Runde</span><b id="round">1</b></div>
+    <div class="stat cash"><span class="lbl">Kasse</span><b id="credits">$0</b></div>
+    <div class="stat dt"><span class="lbl">Tageszeit</span><b id="daytime">Morgen</b></div>
+    <div id="score"></div>
+    <div id="code" class="stat"></div>
+    <div id="control"></div>
+    <div class="spacer"></div>
+    <button id="hqbtn" title="Hauptquartier: Einheiten kaufen">HQ</button>
+    <button id="zonebtn" title="Zur Hot Zone">◎</button>
+    <button id="speedbtn" title="Tempo der gegnerischen Züge">⏩ 1×</button>
+    <button id="helpbtn" title="Hilfe">?</button>
+    <button id="nextunit">Nächste Einheit</button>
+    <button id="endturn" class="primary">Runde beenden</button>
+  </header>
+
+  <canvas id="minimap" width="220" height="140"></canvas>
+  <div id="zoom"><button id="zoomin">+</button><button id="zoomout">−</button></div>
+  <div id="seedinfo"></div>
+  <div id="log"></div>
+  <div id="objectives"></div>
+  <aside id="panel"></aside>
+
+  <div id="forecast">
+    <div class="fc-title">Angriff</div>
+    <div class="fc-row"><span>Schaden</span><b class="fc-dmg">0 %</b></div>
+    <div class="fc-row"><span>Gegenschlag</span><b class="fc-ctr">0 %</b></div>
+    <div class="fc-btns"><button id="fc-no">Abbrechen</button><button id="fc-ok" class="primary">Angreifen</button></div>
+  </div>
+
+  <div id="banner"></div>
+
+  <div id="help">
+    <div class="box">
+      <button class="close">×</button>
+      <h2>So wird gespielt</h2>
+      <h3>Steuerung</h3>
+      <ul>
+        <li><b>Antippen / Linksklick:</b> Einheit wählen, dann blaues Feld antippen zum Ziehen. Rot markierte Gegner antippen zeigt die Vorschau, nochmal antippen greift an.</li>
+        <li><b>Ziehen</b> verschiebt die Karte, <b>zwei Finger / Mausrad</b> zoomt. <b>HQ</b> springt zum Hauptquartier (Einkauf), <b>◎</b> zur Hot Zone, <b>⏩</b> beschleunigt die gegnerischen Züge.</li>
+        <li>Tastatur: <b>E</b> Runde beenden, <b>N</b> nächste Einheit, <b>Esc</b> abbrechen, <b>WASD</b> Karte, <b>Leertaste</b> Angriff bestätigen.</li>
+      </ul>
+      <h3>Sieg: die Zone halten</h3>
+      <ul>
+        <li><b>Drei Fraktionen</b> kämpfen gleichzeitig: ihr und zwei KI-Gegner, jeder gegen jeden. Die Zugfolge rotiert jede Runde, damit niemand dauerhaft zuletzt zieht.</li>
+        <li><b>Control Zone (CZ, grüner Kreis):</b> Am Ende jeder Runde wird gewertet. Die Fraktion mit den meisten Köpfen in der CZ bekommt <b>1 Punkt</b>, bei Gleichstand niemand. Wer zuerst das Ziel erreicht (12, 20 oder 30 Punkte), gewinnt.</li>
+        <li><b>Köpfe:</b> jede Bodeneinheit zählt 1, Insassen von Bodenfahrzeugen zählen mit. Hubschrauber in der Luft und Verwundete zählen nicht. Kills allein bringen keine Punkte — nur Präsenz.</li>
+        <li><b>Hot Zone (HZ, oranger Bereich):</b> ein kleiner Bereich in der CZ, der jede Runde ein Feld weiterzieht (gestrichelt: nächste Position, Pfeil: Richtung). Jeder Kopf in der HZ zählt <b>doppelt</b>, und Rettungen, Hacks und Bauen bringen dort doppeltes Geld.</li>
+        <li><b>Funktürme A–D</b> stehen am Rand der CZ. Infanterie auf einem Turm ohne Feind daneben kann die Konsole <b>hacken</b>: verrät eine Ziffer des vierstelligen Codes. Wer drei Ziffern kennt, kennt den Code. Auf einem eigenen Turm eingegeben, <b>springt die Hot Zone dorthin</b> und bleibt 3 Runden. Danach hat der Turm 6 Runden Abklingzeit, insgesamt gibt es 5 Eingaben pro Partie.</li>
+        <li><b>Bohrturm</b> (im Vorposten bauen, mit 6 Treibstoff starten): zieht die Hot Zone jede Runde zum Vorposten, verbraucht 1 Treibstoff pro Runde. Zieht jeden Feind an.</li>
+      </ul>
+      <h3>Geld ist alles</h3>
+      <ul>
+        <li><b>Kasse in Dollar:</b> Jede Einheit wird am HQ gekauft und ist ab der nächsten Runde einsatzbereit. Geht sie verloren, ist das Geld weg.</li>
+        <li><b>Einnahmen:</b> $160 je Kopf in der CZ und $320 je Kopf in der HZ pro Wertung, Abschuss bestätigt $1.500 (Fahrzeuge $3.200, Hubschrauber $3.600), Ausschalten $400, Wiederbeleben $500, Verbinden $400, Transport in die Zone $350 (HZ $500), Palettenlieferung $1.500, Hämmern und Bauen.</li>
+        <li><b>Konto:</b> Im Einsatzmodus „Konto“ startet ihr mit eurem Kontostand und nehmt das Restgeld plus Prämie (Sieg $5.000, sonst $1.000) mit in den nächsten Einsatz. Nie unter $5.000.</li>
+        <li><b>Kopfgeld:</b> Abschüsse und Verwundungen beim alleinigen Punkteführer bringen 50 % mehr Geld.</li>
+        <li><b>Rekrut:</b> Einmal pro Runde gratis, solange ihr weniger als 5 Einheiten habt.</li>
+        <li><b>Letzte Bestellung wiederholen</b> kauft die Einheiten eurer letzten Runde mit einem Tipp nach.</li>
+      </ul>
+      <h3>Einheiten und Ausrüstung</h3>
+      <ul>
+        <li><b>Munitionswahl:</b> Handwaffen schießen FMJ (Allround), HP (+25 % gegen Infanterie, schwach gegen Panzerung) oder AP (stark gegen Fahrzeuge und Hubschrauber). Umschalten kostet nichts.</li>
+        <li><b>Verwundet statt tot:</b> Infanterie auf 0 geht zu Boden und verblutet nach 2 eigenen Rundenstarts. Ein Sanitäter daneben belebt wieder. Ein weiterer Treffer erledigt den Verwundeten (Abschuss bestätigt).</li>
+        <li><b>Transport:</b> Trupp neben Fahrzeug oder Hubschrauber stellen, „Einsteigen“, fahren, „Aussteigen“ — ausgestiegene Trupps können sofort angreifen. Wird das Fahrzeug zerstört, sterben die Insassen.</li>
+        <li><b>Einsatz-SPz:</b> Sobald eine Fraktion 20 % des Punkteziels hat, bekommt jede ihren SPz. Neue Infanterie kann direkt an ihm eingesetzt werden (2 pro Runde). Unter 50 % Stärke fällt die Antenne aus, ein Pionier repariert. Zerstört: Ersatz nach 4 Runden.</li>
+        <li><b>MG und Minigun</b> halten nieder: Getroffene haben in ihrer nächsten Runde 1 Bewegung weniger.</li>
+        <li><b>Artillerie, Grad und Mörser</b> treffen auch die Nachbarfelder und können Häuser zu Trümmern schießen.</li>
+        <li><b>Hubschrauber</b> fliegen über alles, zählen in der Luft aber nicht als Kopf. Kampfhubschrauber werfen Täuschkörper gegen eine SAM-Rakete pro Runde.</li>
+      </ul>
+      <h3>Vorposten (FOB) und Logistik</h3>
+      <ul>
+        <li><b>FOB errichten:</b> Pionier neben ein freies Feld (mindestens 5 vom eigenen HQ und von anderen FOBs), $7.500. Einflussbereich 2 Felder, startet mit 30 Material.</li>
+        <li><b>Bauen:</b> Pionier im FOB-Bereich wählt eine Stellung und ein Nachbarfeld. Jede Pionier-Aktion ist ein Hammerschlag (⚒). Sandsäcke (+20 % Deckung, begehbar), HESCO und Bremer-Wand (sperren), Mörser, Talon-SAM, Vanguard-CIWS, Werkstatt, Bohrturm, Beobachtungsturm.</li>
+        <li><b>Paletten:</b> Lastwagen oder Transporthubschrauber in der sicheren Zone des HQ laden Material- oder Treibstoffpaletten ($400), im FOB-Bereich abladen füllt das Lager. Liegt der FOB nahe der Zone, gibt es $1.500 Lieferprämie je Palette.</li>
+        <li><b>FOB hacken:</b> Feindliche Infanterie neben der Konsole hackt in zwei aufeinanderfolgenden Runden — dann gehören FOB, Lager und alle Stellungen ihr.</li>
+      </ul>
+      <h3>Gelände</h3>
+      <ul>
+        <li><b>Deckung:</b> Wald 25 %, Ortschaft 35 %, Trümmer 20 %, Hügel 15 % (+1 Sicht), Felsgrat 35 % (nur zu Fuß, +1 Sicht). Räder rollen auf Straßen doppelt so weit. Den Fluss quert man nur über Brücken.</li>
+        <li><b>Sichere Zone:</b> 2 Felder um jedes HQ. Feinde kommen nicht hinein und können nichts darin treffen. Von dort aus kann man aber auch nicht schießen.</li>
+        <li><b>Tarnung:</b> Späher sind getarnt, solange sie weder ziehen noch schießen. Simurgh-Infanterie ist in Wald und Ortschaft getarnt.</li>
+        <li><b>Reaktionsfeuer:</b> Wer in seiner Runde nicht angegriffen hat, feuert einmal auf Gegner, die in Reichweite ziehen (70 %).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="endscreen">
+    <h1>Ende</h1>
+    <div class="stats"></div>
+    <div class="ebtns"><button class="primary" onclick="location.reload()">Neues Spiel</button></div>
+  </div>
+
+  <div id="skirmish" class="ovl"></div>
+  <div id="saves" class="ovl"></div>
+
+  <div id="menu">
+    <div class="m-box">
+      <div class="m-title">HUNDEMARKE</div>
+      <div class="m-sub">Rundenstrategie um die Control Zone</div>
+      <p class="m-text">Drei Söldnerarmeen, eine Zone. Haltet die Control Zone mit mehr Köpfen als der Rest, jagt die Hot Zone, hackt die Funktürme — und gebt euer Geld klug aus: Jede Einheit kostet, jeder Verlust schmerzt.</p>
+      <div class="m-crests" id="mcrests"></div>
+      <div class="m-konto" id="mkonto"></div>
+      <button id="start" class="primary big">Einsatz</button>
+      <button id="loadbtn" class="big">Spielstände</button>
+      <button id="continue" class="big" style="display:none">Fortsetzen</button>
+      <div class="loading">Das Einsatzgebiet wird erkundet …</div>
+      <div class="m-ver">Wardogs-Spin-off von Sandthron · Stufe 1</div>
+    </div>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
