@@ -31,7 +31,7 @@ function showKonto() {
 }
 showKonto();
 
-let opts = { faction: 'ironstar', map: 'gross', target: 'normal', diff: 'normal', cash: 'konto', seed: '' };
+let opts = { faction: 'ironstar', map: 'gross', target: 'normal', diff: 'normal', cash: 'konto', auto: 'an', seed: '' };
 try { opts = { ...opts, ...JSON.parse(localStorage.getItem('hundemarke-opts') || '{}') }; } catch {}
 if (!FACTIONS[opts.faction]) opts.faction = 'ironstar';
 $('#mcrests').innerHTML = FAC_KEYS.map((f) => crestImg(f, 50)).join('');
@@ -51,6 +51,8 @@ function showSkirmish() {
     <div class="m-label">Punkteziel</div>${seg('target', ['kurz', 'normal', 'lang'], ['Kurz · 12', 'Normal · 20', 'Lang · 30'])}
     <div class="m-label">Einsatzgebiet</div>${seg('map', ['klein', 'mittel', 'gross', 'riesig'], ['Klein', 'Mittel', 'Groß', 'Riesig'])}
     <div class="m-label">Schwierigkeit</div>${seg('diff', ['leicht', 'normal', 'schwer'], ['Leicht', 'Normal', 'Schwer'])}
+    <div class="m-label">Automatik am Rundenende</div>${seg('auto', ['an', 'aus'], ['An', 'Aus'])}
+    <div class="m-hint">Untätige Pioniere hämmern an Baustellen daneben, Sanitäter beleben Verwundete daneben wieder und verbinden Angeschlagene.</div>
     <div class="m-hint">Gegner-Ausrüstung: Leicht bis Stufe ${AI_LEVEL.leicht}, Normal bis ${AI_LEVEL.normal}, Schwer bis ${AI_LEVEL.schwer} je Spur.</div>
     <div class="m-label">Kasse</div>${seg('cash', ['konto', 'fest'], [`Konto · ${money(Math.max(CASH_FLOOR, k.bank))}`, `Fest · ${money(START_CASH)}`])}
     <div class="m-hint">Mit „Konto“ zählt jeder Dollar: Was am Ende übrig ist, nehmt ihr mit — plus Prämie.</div>

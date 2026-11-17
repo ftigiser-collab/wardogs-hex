@@ -4,7 +4,7 @@ import { UNITS, BUILDINGS, WEAPONS, TERRAIN, MOVE_COST, FACTIONS, ARMOR_MOD, RAN
 import { center, pixelToHex, distance, R, ring } from './hex.js';
 import { icon } from './sprites.js';
 import { angDiff } from './util.js';
-import { aiTurn } from './ai.js';
+import { aiTurn, autoTurn } from './ai.js';
 import { crestImg } from './crest.js';
 import { SLOTS, slotMeta, writeSlot } from './saves.js';
 
@@ -598,6 +598,14 @@ export class Controller {
     if (sel && this.mode === 'unit' && !ownAt.includes(sel)) {
       const n = this.reach.get(i);
       if (n && n.end && !(enemyAt.length)) { await this.moveSelected(c, r); return; }
+      // Ziel außer Reichweite: Marschziel setzen (läuft auch in den nächsten Runden weiter)
+      if (!n && !enemyAt.length && !ownAt.length && sel.isUnit && !sel.moved && g.cost(sel.def.mt === 'air' ? 'air' : sel.def.mt, c, r) !== Infinity && distance(sel.c, sel.r, c, r) > 1) {
+        const u = sel; u.rally = { c, r }; u.auto = null;
+        this.deselect(); this.flash(`${u.def.name}: Marschziel gesetzt`);
+        await this.rallyStep([u]);
+        if (!u.dead && !u.acted && this.hasAction(u)) { this.select(u); this.mode = 'moved'; }
+        return;
+      }
     }
     if (ownAt.length) {
       const idx = ownAt.indexOf(sel);
@@ -626,7 +634,7 @@ export class Controller {
     return false;
   }
   async moveSelected(c, r) {
-    const g = this.g, u = this.sel; u.rally = null;
+    const g = this.g, u = this.sel; u.rally = null; if (u.auto) { u.auto = null; this.flash('Auftrag beendet (manuell bewegt)'); }
     this.busy = true; this.clearHL(); this.r.hl.sel = u;
     await this.doMove(u, c, r, this.reach);
     this.busy = false;
@@ -687,6 +695,8 @@ export class Controller {
     if (this.busy || g.current !== 0 || g.state !== 'play') return;
     this.busy = true; this.deselect();
     $('#endturn').disabled = true;
+    await this.autoPhase();
+    if (this.checkEnd()) return;
     await this.playEvents(g.endTurnEvents(0));
     let order = g.orderFor(g.round), idx = order.indexOf(0);
     for (const f of order.slice(idx + 1)) { await this.aiPhase(f); if (this.checkEnd()) return; }
@@ -709,6 +719,31 @@ export class Controller {
     $('#endturn').disabled = false;
     this.refresh();
     this.save();
+  }
+
+  // Automatik am Rundenende: Aufträge der Fahrzeuge, untätige Pioniere hämmern, Sanitäter versorgen
+  async autoPhase() {
+    const g = this.g, sp = this.speed; this.speed = sp * Math.max(2, this.aiSpeed);
+    const act = this.actAnimated;
+    try {
+      for (const u of g.ownUnits(0)) {
+        if (u.dead || u.carried || u.downed || u.acted || u.moved || u.fresh || !u.auto || g.state !== 'play') continue;
+        await autoTurn(g, act, u);
+        if (!u.dead) u.acted = true;
+      }
+      if (g.settings?.auto !== 'aus') {
+        for (const u of g.ownUnits(0)) {
+          if (u.dead || u.carried || u.downed || u.acted || u.attacked || g.state !== 'play') continue;
+          if (u.def.medic) {
+            const rv = g.reviveTargets(u)[0]; if (rv) { await this.doAct(g.revive(u, rv)); continue; }
+            const hl = g.healTargets(u).sort((a, b) => a.hp - b.hp)[0]; if (hl && hl.hp < 75) { await this.doAct(g.heal(u, hl)); continue; }
+          }
+          if (u.def.builder) { const h = g.hammerTargets(u)[0]; if (h) { await this.doAct(g.hammer(u, h)); continue; } }
+        }
+      }
+    } catch (e) { console.warn('Automatik-Fehler', e); }
+    this.speed = sp;
+    this.refresh();
   }
 
   save() { try { localStorage.setItem('hundemarke-save', this.g.serialize()); } catch (e) { /* Speicher voll oder gesperrt */ } }
@@ -752,7 +787,7 @@ export class Controller {
   }
 
   waiting(u) { return (u.waitUntil || 0) >= this.g.round; }
-  skipUnit(u) { return u.dead || u.carried || u.downed || this.waiting(u); }
+  skipUnit(u) { return u.dead || u.carried || u.downed || this.waiting(u) || !!u.auto || u.fresh; }
   idleUnits() { return this.g.ownUnits(0).filter((u) => !this.skipUnit(u) && !u.moved && !u.acted); }
   requestEndTurn() {
     const g = this.g;
@@ -981,9 +1016,9 @@ export class Controller {
     this.flash(`${us.length} Einheiten auf dem Marsch`);
     await this.rallyStep();
   }
-  async rallyStep() {
+  async rallyStep(only = null) {
     const g = this.g;
-    const list = this.rallyUnits().filter((u) => u.rally);
+    const list = (only || this.rallyUnits()).filter((u) => u.rally);
     if (!list.length) return;
     this.busy = true;
     // nächste zuerst, damit die Spitze den Weg freimacht
@@ -1036,6 +1071,8 @@ export class Controller {
       if (e.gearUses) for (const [k, n] of Object.entries(e.gearUses)) if (n > 0) chips.push(`<span class="chip">${k === 'chute' ? '🪂' : GEAR[k]?.name.split(/[- ]/)[0]} ×${n}</span>`);
       if (e.def.builder) chips.push(`<span class="chip">▦ ${e.supplies || 0}</span>`);
       if (e.chute) chips.push('<span class="chip warn">am Fallschirm · +50 % Schaden</span>');
+      if (e.auto) chips.push(`<span class="chip cz">🔁 ${e.auto === 'supply' ? 'Versorgung' : 'Pendeldienst'}</span>`);
+      if (e.rally) chips.push(`<span class="chip">⚑ Marsch nach ${e.rally.c}·${e.rally.r}</span>`);
       if (e.marked) chips.push('<span class="chip warn">markiert</span>');
       if (e.suppressed) chips.push('<span class="chip warn">niedergehalten</span>');
       if (e.downed) chips.push(`<span class="chip warn">verwundet · ${e.downed} R.</span>`);
@@ -1132,6 +1169,9 @@ export class Controller {
     if (g.canDropPallets(e)) B('droppal', '▼ Abladen', 'primary');
     else if ((e.cargoP || []).some((k) => k !== 'kiste') && !e.acted) notes.push('Paletten abladen nur im eigenen FOB-Bereich');
     if (g.canDropCrate(e)) B('crate', '✚ Kiste abwerfen', 'primary');
+    if (e.def.pallets && !e.def.spawnPoint) B('auto', e.auto === 'supply' ? '🔁 Versorgung an' : '🔁 FOB versorgen', e.auto === 'supply' ? 'on' : '', 'supply', 'Versorgungsauftrag: fährt am Rundenende selbstständig HQ → Paletten laden (je nach Bedarf, mind. $1.500 Reserve) → FOB abladen → zurück');
+    if (e.def.transport && !e.def.spawnPoint && e.def.cat !== 'inf') B('auto', e.auto === 'ferry' ? '🔁 Pendeldienst an' : '🔁 Pendeldienst', e.auto === 'ferry' ? 'on' : '', 'ferry', 'Pendeldienst: holt am Rundenende Trupps aus der sicheren Zone am HQ ab und bringt sie in die Zone');
+    if (e.rally) B('unrally', `⚑ Marschziel löschen`);
     if (g.canVSmoke(e)) B('vsmoke', '☁ Nebel', '', '', 'Fahrzeugnebel: Nebelwand auf dem eigenen Feld und daneben — kostet keine Aktion, 1 Ladung');
     if (g.canLand(e)) B('land', '⬇ Landen');
     if (e.landed) { if (g.canTakeoff(e)) B('takeoff', '⬆ Starten', 'primary'); else notes.push('Gelandet — startet nächste Runde'); }
@@ -1336,6 +1376,8 @@ export class Controller {
     if (a === 'repair') { this.targetMode('repair', e, g.repairTargets(e).map((x) => [x.c, x.r]), 'Fahrzeug oder Bauwerk antippen'); return; }
     if (a === 'revive') { const ts = g.reviveTargets(e); if (ts.length === 1) { this.busy = true; await this.doAct(g.revive(e, ts[0])); this.busy = false; this.deselect(); return; } this.targetMode('revive', e, ts.map((x) => [x.c, x.r]), 'Verwundeten antippen'); return; }
     if (a === 'heal') { this.targetMode('heal', e, g.healTargets(e).map((x) => [x.c, x.r]), 'Trupp zum Verbinden antippen'); return; }
+    if (a === 'auto') { e.auto = e.auto === t ? null : t; if (e.auto) e.rally = null; this.flash(e.auto ? (t === 'supply' ? 'Versorgungsauftrag erteilt — läuft ab Rundenende automatisch' : 'Pendeldienst aktiv — läuft ab Rundenende automatisch') : 'Auftrag beendet'); this.showPanel(e, true); return; }
+    if (a === 'unrally') { e.rally = null; this.showPanel(e, true); return; }
     if (a === 'vsmoke') { this.busy = true; await this.doAct(g.vehicleSmoke(e)); this.busy = false; this.select(e); return; }
     if (a === 'paradrop') { this.busy = true; await this.doAct(g.paradrop(e)); this.busy = false; this.select(e); return; }
     if (a === 'crate') { const hx = g.crateHexes(e); if (hx.length === 1) { this.busy = true; await this.doAct(g.dropCrate(e, hx[0][0], hx[0][1])); this.busy = false; this.select(e); return; } this.targetMode('crate', e, hx, 'Feld für die Versorgungskiste antippen'); return; }

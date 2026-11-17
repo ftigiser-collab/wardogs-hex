@@ -53,6 +53,12 @@ Spin-off von [Sandthron](https://github.com/ftigiser-collab/sandthron) im Settin
 - Koalition sammelt sich innen am CZ-Rand
 - Eigene Grafiken für Ural (6×6 mit Plane), SPH-2 (Radhaubitze), Lakota (Black-Hawk-Stil) und Havoc (Tandemcockpit); schwere/leichte Westen und Ghillie-Anzüge an den Figuren sichtbar
 
+## Komfort (QoL)
+- Marschziel: Feld außerhalb der Reichweite antippen, Einheit läuft jede Runde weiter
+- Versorgungsauftrag für Paletten-Fahrzeuge (HQ → FOB nach Bedarf), Pendeldienst für Transporter (HQ → Zone)
+- Automatik am Rundenende: untätige Pioniere hämmern, Sanitäter beleben/verbinden (abschaltbar)
+- KI-Stufen 10/22/35, KI steckt Überschuss in Material und Ausrüstung
+
 ## Geplant
 - Mehrere Kartentypen und rotierende Zonen
 - Option: gleichzeitige Zugauswertung (WeGo) als eigener Modus

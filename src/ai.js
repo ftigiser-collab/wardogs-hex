@@ -44,6 +44,14 @@ function airDanger(g, owner) {
 const nearest = (u, list) => { let best = null, bd = Infinity; for (const e of list) { const d = distance(u.c, u.r, e.c, e.r); if (d < bd) { bd = d; best = e; } } return best; };
 const alive = (u) => u && !u.dead && !u.downed;
 
+// ---------- Automatik für Spielereinheiten (Versorgungsauftrag, Pendeldienst) ----------
+export async function autoTurn(g, act, u) {
+  const ctx = { danger: dangerMap(g, u.owner), air: airDanger(g, u.owner), claims: new Set(), owner: u.owner, hq: g.hqOf(u.owner), spz: g.spzOf(u.owner), fob: g.fobsOf(u.owner)[0] || null, dw: 1, target: -1, onlySafe: true };
+  if (u.auto === 'supply') { if (!g.fobsOf(u.owner).length) return false; return logisticsTurn(g, act, u, ctx, true); }
+  if (u.auto === 'ferry') return ferryTurn(g, act, u, ctx);
+  return false;
+}
+
 // ---------- KI-Zug ----------
 export async function aiTurn(g, act, owner) {
   const me = g.players[owner];
@@ -373,7 +381,7 @@ function buildWish(g, owner, fob, u) {
 }
 
 // ---------- Logistik: Paletten zum FOB ----------
-async function logisticsTurn(g, act, u, ctx) {
+async function logisticsTurn(g, act, u, ctx, noCrate = false) {
   const owner = u.owner, p = g.players[owner];
   const fob = g.fobsOf(owner).sort((a, b) => distance(a.c, a.r, g.cz.c, g.cz.r) - distance(b.c, b.r, g.cz.c, g.cz.r))[0];
   if (!fob) return u.def.transport ? false : (await moveToward(g, act, u, ctx.hq.c, ctx.hq.r), true);
@@ -389,21 +397,22 @@ async function logisticsTurn(g, act, u, ctx) {
     if (alive(u) && g.canDropPallets(u)) await act.act(g.dropPallets(u));
     return true;
   }
-  if ((u.passengers || []).length) return false;
+  if ((u.passengers || []).length && !noCrate) return false;
   if (g.inSafe(u.c, u.r, owner)) {
     const reserve = 1500;
     const hasB = (t) => g.buildings.some((b) => !b.dead && b.owner === owner && b.type === t && b.fob === fob.id);
-    const want = drill && fob.stock.sprit < 8 ? 'sprit' : fob.stock.bau < 40 ? 'bau' : (hasB('werkstatt') || hasB('stingray')) && (fob.stock.mech || 0) < 10 ? 'mech' : (drill || hasB('tankstelle')) && fob.stock.sprit < 14 ? 'sprit' : null;
+    const bauNeed = p.credits > 20000 ? 160 : 40;
+    const want = drill && fob.stock.sprit < 8 ? 'sprit' : fob.stock.bau < bauNeed ? 'bau' : (hasB('werkstatt') || hasB('stingray')) && (fob.stock.mech || 0) < 10 ? 'mech' : (drill || hasB('tankstelle')) && fob.stock.sprit < 14 ? 'sprit' : null;
     const crates = g.buildings.filter((b) => !b.dead && b.owner === owner && b.type === 'kiste').length;
     const inZone = g.units.filter((x) => !x.dead && x.owner === owner && x.def.cat === 'inf' && g.inCZ(x.c, x.r)).length;
-    if (!want && !crates && inZone >= 3 && p.credits > 2500 && g.canLoadPallet(u)) { g.loadPallet(u, 'kiste'); await moveToward(g, act, u, g.hz.c, g.hz.r); return true; }
+    if (!noCrate && !want && !crates && inZone >= 3 && p.credits > 2500 && g.canLoadPallet(u)) { g.loadPallet(u, 'kiste'); await moveToward(g, act, u, g.hz.c, g.hz.r); return true; }
     if (!want) return false;
     while (g.canLoadPallet(u) && p.credits >= PALLETS[want].cost + reserve) g.loadPallet(u, (u.cargoP.length && want === 'sprit' && fob.stock.bau < 20) ? 'bau' : want);
     if (u.cargoP.length) { await moveToward(g, act, u, fob.c, fob.r); return true; }
     return false;
   }
   // leer: zurück zum HQ (Infanterie mitnehmen übernimmt ferryTurn, wenn welche wartet)
-  if (u.def.transport && g.units.some((t) => g.canBoard(u, t))) return false;
+  if (!noCrate && u.def.transport && g.units.some((t) => g.canBoard(u, t))) return false;
   await moveToward(g, act, u, ctx.hq.c, ctx.hq.r);
   return true;
 }
@@ -423,7 +432,7 @@ async function ferryTurn(g, act, u, ctx) {
   }
   const heli = UNITS[u.type].mt === 'air';
   const n0 = (u.passengers || []).length;
-  const wantsRide = (t) => g.isFootInf(t) && t.owner === owner && !t.carried && !t.downed && !t.acted && !t.fresh && distance(t.c, t.r, g.cz.c, g.cz.r) > g.cz.rad + 2 && (!t.def.builder || g.fobsOf(owner).length === 0);
+  const wantsRide = (t) => g.isFootInf(t) && t.owner === owner && !t.carried && !t.downed && !t.acted && !t.fresh && !t.moved && distance(t.c, t.r, g.cz.c, g.cz.r) > g.cz.rad + 2 && (!t.def.builder || g.fobsOf(owner).length === 0) && (!ctx.onlySafe || g.inSafe(t.c, t.r, owner) || distance(t.c, t.r, u.c, u.r) <= 1);
   // Hubschrauber: zum Aufnehmen landen, voll beladen wieder starten
   if (heli && u.landed) {
     if (n0 < u.def.transport) for (const t of g.units.filter((t) => wantsRide(t) && g.canBoard(u, t))) { if ((u.passengers || []).length >= u.def.transport) break; await act.board(u, t); }
@@ -568,7 +577,8 @@ async function aiShop(g, act, owner, ctx) {
     let type = t, lo = null;
     if (TEMPLATES[t] || t === 'rekrut') { lo = t === 'rekrut' ? g.defaultLoadout(owner, t) : templateLoadout(t, (id) => g.canUse(owner, id), Math.max(700, (p.credits - reserve) * Math.min(0.6, 0.3 + p.credits / 80000))); if (!lo) return false; type = t === 'rekrut' ? 'rekrut' : roleOf(lo); if (!lo.free && units.some((x) => UNITS[x.type].mt === 'air' && x.def.transport)) lo = { ...lo, chute: true }; }
     const d = UNITS[type]; if (!d || d.noBuy) return false;
-    if (d.cat === 'inf' ? inf.length + bought >= 22 && type !== 'pionier' : units.length + bought >= 32) return false;
+    const rich = p.credits > 25000;
+    if (d.cat === 'inf' ? inf.length + bought >= (rich ? 24 : 22) && type !== 'pionier' : units.length + bought >= (rich ? 36 : 32)) return false;
     const at = d.cat === 'inf' && spzFwd ? 'spz' : 'hq';
     if (!d.free && p.credits - g.unitCost(owner, type, lo) < reserve) return false;
     const ev = g.buy(owner, type, at, lo) || (at === 'spz' ? g.buy(owner, type, 'hq', lo) : null);

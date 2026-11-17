@@ -309,7 +309,7 @@ export const SPZ_DEPLOYS = 2;     // Einsätze pro Runde an einem SPz
 export const DOWNED_TURNS = 2;    // so viele eigene Rundenstarts bis zum Verbluten
 
 export const TARGETS = { kurz: 12, normal: 20, lang: 30 };
-export const AI_LEVEL = { leicht: 8, normal: 18, schwer: 30 };
+export const AI_LEVEL = { leicht: 10, normal: 22, schwer: 35 };
 
 export const RANKS = [
   { name: 'Rekrut', xp: 0, dmg: 1, taken: 1 },
