@@ -779,6 +779,13 @@ export class Game {
     this.addXp(u.owner, 'medic', 10);
     return { type: 'smoke', u: u.id, c, r };
   }
+  // Fahrzeugnebel: Gegenmaßnahme für Bodenfahrzeuge, kostet keine Aktion, 1 Ladung (am HQ/Reparaturstation neu)
+  canVSmoke(u) { return u.isUnit && u.def.cat === 'veh' && !u.landed && (u.vsmoke ?? 1) > 0 && !u.vsUsed && u.owner === this.current && !u.carried; }
+  vehicleSmoke(u) {
+    u.vsmoke = (u.vsmoke ?? 1) - 1; u.vsUsed = true;
+    this.smoke.push({ c: u.c, r: u.r, owner: u.owner });
+    return { type: 'smoke', u: u.id, c: u.c, r: u.r };
+  }
   markTargets(u) { const s = this.sightOf(u); return this.units.filter((t) => !t.dead && !t.carried && t.owner !== u.owner && distance(t.c, t.r, u.c, u.r) <= s && !this.stealthed(t, u.owner) && (u.owner !== 0 || this.visible[this.i(t.c, t.r)])); }
   canMark(u) { return u.def.marker && this.canAct(u) && !u.marked_used && this.markTargets(u).length > 0; }
   mark(u, t) {
@@ -974,7 +981,7 @@ export class Game {
         if (u.downed <= 0) { u.downed = 1; this.kill(u, null); ev.push({ type: 'bleed', u: u.id }); if (owner === 0) this.say(`${u.def.name} ist verblutet`, 'bad'); continue; }
         u.moved = true; u.acted = true; continue;
       }
-      u.moved = false; u.acted = false; u.attacked = false; u.reflex = false; u.ambushed = false; u.fresh = false; u.didLand = false; u.marked_used = false; u.fuelBoost = 0;
+      u.moved = false; u.acted = false; u.attacked = false; u.reflex = false; u.ambushed = false; u.fresh = false; u.didLand = false; u.marked_used = false; u.fuelBoost = 0; u.vsUsed = false;
       if (u.def.flares) u.flareReady = true;
       if (u.rank && RANKS[u.rank].regen && u.hp < 100) u.hp = Math.min(100, u.hp + RANKS[u.rank].regen);
       if (u.landed && u.hp < 100) { const h = Math.min(100 - u.hp, 15); u.hp += h; ev.push({ type: 'heal', u: u.id, amount: h }); }
@@ -983,6 +990,7 @@ export class Game {
       if (u.def.ammo && u.ammo < u.def.ammo && (atHq || (fob && (u.def.mt !== 'air' || hasB('werkstatt', fob))))) { u.ammo = u.def.ammo; ev.push({ type: 'rearm', u: u.id }); }
       if (atHq && u.gearUses && u.lo) { const full = infDef(u.lo).gearUses || {}; for (const k in full) u.gearUses[k] = full[k]; }
       if (atHq && u.def.builder) u.supplies = 20;
+      if (u.def.cat === 'veh' && (atHq || (fob && hasB('werkstatt', fob)))) u.vsmoke = 1;
       if (atHq && u.hp < 100) { const h = Math.min(100 - u.hp, 25); u.hp += h; if (u.def.spawnPoint && u.hp >= 50) u.antenna = true; ev.push({ type: 'heal', u: u.id, amount: h }); }
       else if (fob && (u.def.cat === 'veh' || u.def.mt === 'air') && u.hp < 100 && hasB('werkstatt', fob) && fob.stock.mech >= 2) {
         fob.stock.mech -= 2; const h = Math.min(100 - u.hp, 25); u.hp += h; if (u.def.spawnPoint && u.hp >= 50) u.antenna = true; ev.push({ type: 'heal', u: u.id, amount: h });
@@ -1029,7 +1037,8 @@ export class Game {
     for (const u of this.headsOf(0).at) { const q = this.bodyPos(u); this.addXp(0, u.def.cat === 'inf' ? 'assault' : this.trackOf(u), this.inHZ(q.c, q.r) ? 8 : 4); }
     for (const p of this.players) {
       const h = this.headsOf(p.id);
-      const amt = h.cz * PAY.cz + h.hz * PAY.hz;
+      const top = Math.max(...this.players.map((x) => x.score)), behind = top - p.score >= 4;
+      const amt = (h.cz * PAY.cz + h.hz * PAY.hz) * (behind ? 1.5 : 1) + (behind && !h.cz && !h.hz ? 400 : 0);   // Kriegskasse: Abgehängte bekommen Zuschuss
       if (amt > 0) {
         const got = this.pay(p.id, amt, 'Zonengeld');
         ev.push({ type: 'zonepay', owner: p.id, amount: got, at: h.at.map((u) => { const q = this.bodyPos(u); return { c: q.c, r: q.r, hz: this.inHZ(q.c, q.r) }; }) });

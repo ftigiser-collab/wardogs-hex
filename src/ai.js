@@ -45,6 +45,10 @@ export async function aiTurn(g, act, owner) {
     danger: dangerMap(g, owner), air: airDanger(g, owner), claims: new Set(), owner,
     hq: g.hqOf(owner), spz: g.spzOf(owner), fob: g.fobsOf(owner)[0] || null,
   };
+  // Aggressiv, wenn abgehängt: Gefahr zählt weniger, die Zone mehr
+  const top = Math.max(...g.players.map((x) => x.score));
+  ctx.dw = (top - me.score >= 2 || g.updateHeads()[owner] === 0) ? 0.6 : 1;
+  for (let i = 0; i < ctx.danger.length; i++) ctx.danger[i] = Math.min(5, ctx.danger[i]) * ctx.dw;
   // Munition passend zum Gelände der Gegner
   const foes = g.units.filter((e) => !e.dead && e.owner !== owner && !e.carried);
   const armorShare = foes.length ? foes.filter((e) => e.def.armor !== 'inf').length / foes.length : 0;
@@ -94,6 +98,7 @@ async function unitTurn(g, act, u, ctx, armorShare) {
   if (g.isFootInf(u) && await towerTurn(g, act, u, ctx)) return;
   if (g.isFootInf(u) && g.canHackFob(u)) { await act.act(g.hackFob(u, g.hackFobTargets(u)[0])); return; }
   if (await gearTurn(g, act, u, ctx)) return;
+  if (!alive(u)) return;
   await combatTurn(g, act, u, ctx);
   // nach dem Zug: markieren, Mine legen
   if (alive(u) && g.canMark(u)) { const t = g.markTargets(u).sort((a, b) => value(g, b) - value(g, a))[0]; if (t) await act.act(g.mark(u, t)); }
@@ -102,6 +107,7 @@ async function unitTurn(g, act, u, ctx, armorShare) {
 
 // Ausrüstung: C4 gegen Fahrzeug/Bau daneben, Molotow auf Infanterie-Pulks, Rauch für Verwundete
 async function gearTurn(g, act, u, ctx) {
+  if (g.canVSmoke(u) && u.hp < 60 && ctx.danger[g.i(u.c, u.r)] > 1) await act.act(g.vehicleSmoke(u));
   if (g.isFootInf(u) && !u.acted) { const t = g.takeoverTargets(u).sort((a, b) => value(g, b) - value(g, a))[0]; if (t && value(g, t) >= 700) { await act.act(g.takeover(u, t)); return true; } }
   if (!u.gearUses || u.acted || u.attacked) return false;
   if (g.gearLeft(u, 'c4')) { const t = g.c4Targets(u).sort((a, b) => value(g, b) - value(g, a))[0]; if (t && value(g, t) >= 1500) { await act.attack2(u, g.c4(u, t)); return true; } }
@@ -149,7 +155,7 @@ async function combatTurn(g, act, u, ctx) {
         else if (t.isUnit && g.inCZ(t.c, t.r)) s += 70;
         if (t.isUnit && t.def.spawnPoint && t.antenna) s += 400;
         if (u.hp < 40 && !f.kills) s -= 80;
-        s += (zoneScore(g, u, n.c, n.r) - curZone) * 3;
+        s += (zoneScore(g, u, n.c, n.r) - curZone) * (ctx.dw < 1 ? 4 : 3);
         s -= danger[g.i(n.c, n.r)] * 40;
         if (!g.isAir(u)) s += g.coverAt({ ...u, c: n.c, r: n.r, isUnit: true, def: u.def, owner: u.owner }) * 60;
         s -= n.cost * 2;
@@ -192,7 +198,7 @@ async function combatTurn(g, act, u, ctx) {
   let best = null, bs = -1e9;
   for (const n of reach.values()) {
     if (!n.end) continue;
-    let s = zoneScore(g, u, n.c, n.r) * 1.5 + g.coverAt({ ...u, c: n.c, r: n.r }) * 40 - ctx.danger[g.i(n.c, n.r)] * (g.inHZ(n.c, n.r) ? 10 : 25) - n.cost * 0.5;
+    let s = zoneScore(g, u, n.c, n.r) * (ctx.dw < 1 ? 2.2 : 1.5) + g.coverAt({ ...u, c: n.c, r: n.r }) * 40 - ctx.danger[g.i(n.c, n.r)] * (g.inHZ(n.c, n.r) ? 10 : 25) - n.cost * 0.5;
     if (g.hzNextHas(n.c, n.r)) s += 8;
     if (s > bs) { bs = s; best = n; }
   }

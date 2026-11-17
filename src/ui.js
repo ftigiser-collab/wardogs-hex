@@ -1128,6 +1128,7 @@ export class Controller {
     if (g.canDropPallets(e)) B('droppal', '▼ Abladen', 'primary');
     else if ((e.cargoP || []).some((k) => k !== 'kiste') && !e.acted) notes.push('Paletten abladen nur im eigenen FOB-Bereich');
     if (g.canDropCrate(e)) B('crate', '✚ Kiste abwerfen', 'primary');
+    if (g.canVSmoke(e)) B('vsmoke', '☁ Nebel', '', '', 'Fahrzeugnebel: Nebelwand auf dem eigenen Feld und daneben — kostet keine Aktion, 1 Ladung');
     if (g.canLand(e)) B('land', '⬇ Landen');
     if (e.landed) { if (g.canTakeoff(e)) B('takeoff', '⬆ Starten', 'primary'); else notes.push('Gelandet — startet nächste Runde'); }
     let html = ammo + (btns.length ? `<div class="p-actions">${btns.join('')}</div>` : '');
@@ -1331,6 +1332,7 @@ export class Controller {
     if (a === 'repair') { this.targetMode('repair', e, g.repairTargets(e).map((x) => [x.c, x.r]), 'Fahrzeug oder Bauwerk antippen'); return; }
     if (a === 'revive') { const ts = g.reviveTargets(e); if (ts.length === 1) { this.busy = true; await this.doAct(g.revive(e, ts[0])); this.busy = false; this.deselect(); return; } this.targetMode('revive', e, ts.map((x) => [x.c, x.r]), 'Verwundeten antippen'); return; }
     if (a === 'heal') { this.targetMode('heal', e, g.healTargets(e).map((x) => [x.c, x.r]), 'Trupp zum Verbinden antippen'); return; }
+    if (a === 'vsmoke') { this.busy = true; await this.doAct(g.vehicleSmoke(e)); this.busy = false; this.select(e); return; }
     if (a === 'paradrop') { this.busy = true; await this.doAct(g.paradrop(e)); this.busy = false; this.select(e); return; }
     if (a === 'crate') { const hx = g.crateHexes(e); if (hx.length === 1) { this.busy = true; await this.doAct(g.dropCrate(e, hx[0][0], hx[0][1])); this.busy = false; this.select(e); return; } this.targetMode('crate', e, hx, 'Feld für die Versorgungskiste antippen'); return; }
     if (a === 'takeover') { const ts = g.takeoverTargets(e); if (ts.length === 1) { this.busy = true; await this.doAct(g.takeover(e, ts[0])); this.busy = false; this.deselect(); return; } this.targetMode('takeover', e, ts.map((x) => [x.c, x.r]), 'Feindliches Bauwerk antippen'); return; }

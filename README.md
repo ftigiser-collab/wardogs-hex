@@ -42,7 +42,7 @@ Spin-off von [Sandthron](https://github.com/ftigiser-collab/sandthron) im Settin
 ## Stand: Stufe 3
 - Hubschrauber nehmen nur gelandet auf und setzen nur gelandet ab; Fallschirmabsprung aus der Luft (Einweg-Fallschirm im Loadout, zufälliger Landepunkt, verwundbar bis zur nächsten Runde, Überlebensprämie)
 - Wardogs-Ökonomie: Pendelfahrten-Bonus, Versorgungskisten, Aufklärungs-Assist, Bauten übernehmen, Teambeitrag nach Platz, Rekrutenrabatt bis Wardog-Stufe 9
-- Regenfronten (−1 Sicht)
+- Regenfronten (−1 Sicht), Fahrzeugnebel als Gegenmaßnahme
 - Kompaktes Einheiten-Panel: Statuschips, kurze Aktionsknöpfe, Details einklappbar; Kamera weicht aus, damit die gewählte Einheit sichtbar bleibt; Baumenü zeigt nur, was der Hammer kann
 
 ## Geplant
