@@ -1,6 +1,6 @@
 // Spielregeln und Zustand — Hundemarke (rundenbasiert, drei Fraktionen, King of the Hill)
 import { UNITS, BUILDINGS, WEAPONS, ARMOR_MOD, AMMO, TERRAIN, MOVE_COST, FACTIONS, RANKS, PAY, PALLETS, FOB_STOCK, CODE_USES, CODE_LOCK, TOWER_CD,
-  SPZ_RESPAWN, SPZ_DEPLOYS, DOWNED_TURNS, START_CASH, GUNS, GEAR, VESTS, infDef, loadoutCost, templateLoadout, TRACK_KEYS, levelOf } from './data.js';
+  SPZ_RESPAWN, SPZ_DEPLOYS, DOWNED_TURNS, START_CASH, GUNS, GEAR, VESTS, infDef, loadoutCost, templateLoadout, TRACK_KEYS, levelOf , SQUAD_BASE } from './data.js';
 import { neighbors, distance, ring, center } from './hex.js';
 import { mulberry32 } from './util.js';
 
@@ -40,7 +40,7 @@ export class Game {
     this.mines = []; this.smoke = [];
     this.xp = Object.fromEntries(TRACK_KEYS.map((k) => [k, 0]));
     // Freischaltungen: Spieler aus dem Konto, KI nach Schwierigkeit
-    const unl = opts.unlocked || [];
+    const unl = opts.unlocked || []; this.rookie = !!opts.rookie;
     for (const p of this.players) { p.unlocked = p.id === 0 ? [...unl] : []; p.aiLevel = p.id === 0 ? null : (opts.aiLevel ?? 18); p.levels = p.id === 0 ? (opts.levels || {}) : null; }
   }
   // Darf diese Fraktion das Teil benutzen?
@@ -69,7 +69,7 @@ export class Game {
   // ---------- Fraktionsboni ----------
   unitCost(owner, type, lo) {
     const d = UNITS[type], pk = this.players[owner].perk;
-    if (d.cat === 'inf') return loadoutCost(lo || this.defaultLoadout(owner, type));
+    if (d.cat === 'inf') { const L = lo || this.defaultLoadout(owner, type), full = loadoutCost(L); return owner === 0 && this.rookie && !L.free ? Math.round((SQUAD_BASE + (full - SQUAD_BASE) * 0.5) / 10) * 10 : full; }
     let c = d.cost;
     if (d.mt === 'air' && pk.airCost) c *= pk.airCost;
     if (d.mt === 'track' && pk.armorCost) c *= pk.armorCost;
@@ -268,7 +268,7 @@ export class Game {
   canBoard(apc, t) {
     return apc && apc.def.transport && !apc.dead && !apc.landedBlock && t && !t.dead && t !== apc && this.isFootInf(t) && !t.downed && t.owner === apc.owner && !t.carried && !t.acted
       && !(apc.cargoP || []).length && (apc.passengers || []).length < apc.def.transport && distance(apc.c, apc.r, t.c, t.r) <= 1 && t.owner === this.current
-      && (apc.def.mt !== 'air' || true);
+      && (UNITS[apc.type].mt !== 'air' || !!apc.landed);
   }
   board(apc, t) {
     apc.passengers = [...(apc.passengers || []), t.id];
@@ -278,7 +278,8 @@ export class Game {
   unloadHexes(apc) {
     if (!(apc.passengers || []).length || apc.acted) return [];
     const t = this.get(apc.passengers[0]); if (!t) return [];
-    const cands = apc.def.mt === 'air' ? [[apc.c, apc.r], ...neighbors(apc.c, apc.r, this.W, this.H)] : neighbors(apc.c, apc.r, this.W, this.H);
+    if (UNITS[apc.type].mt === 'air' && !apc.landed) return [];   // Hubschrauber: nur gelandet aussteigen (oder Fallschirm)
+    const cands = neighbors(apc.c, apc.r, this.W, this.H);
     return cands.filter(([c, r]) => this.groundFree(c, r) && this.cost(t.def.mt, c, r) !== Infinity && (this.safeOwner(c, r) < 0 || this.safeOwner(c, r) === apc.owner));
   }
   unload(apc, c, r) {
@@ -293,6 +294,37 @@ export class Game {
       this.addXp(apc.owner, apc.def.mt === 'air' ? 'pilot' : 'driver', 40);
     }
     t.rideFromCz = true;
+    this.tripStreak(apc, c, r, ev);
+    return ev;
+  }
+  // Pendelfahrten: jede weitere Lieferung in die Zone in Folge bringt +$50 (bis 10 in Folge)
+  tripStreak(apc, c, r, ev) {
+    if (!this.inCZ(c, r) || apc.tripRound === this.round) return;
+    apc.trips = Math.min(10, (apc.tripLast === this.round - 1 || apc.tripLast === this.round - 2 || apc.tripLast === this.round - 3 ? (apc.trips || 0) : 0) + 1);
+    apc.tripRound = this.round; apc.tripLast = this.round;
+    if (apc.trips > 1) { this.pay(apc.owner, 50 * apc.trips * 4, `Pendelfahrt ×${apc.trips}`, c, r, ev.cash); this.addXp(apc.owner, apc.def.mt === 'air' || UNITS[apc.type].mt === 'air' ? 'pilot' : 'driver', 25); ev.trips = apc.trips; }
+  }
+  // ---------- Fallschirm: Absprung aus dem fliegenden Hubschrauber ----------
+  chuteRiders(apc) { return (apc.passengers || []).map((id) => this.get(id)).filter((t) => t && (t.gearUses?.chute || 0) > 0); }
+  chuteHexes(apc) {
+    return [[apc.c, apc.r], ...neighbors(apc.c, apc.r, this.W, this.H)].filter(([c, r]) => this.groundFree(c, r) && this.cost('foot', c, r) !== Infinity && (this.safeOwner(c, r) < 0 || this.safeOwner(c, r) === apc.owner));
+  }
+  canParadrop(apc) { return this.isThopter(apc) && !apc.landed && !apc.acted && apc.owner === this.current && this.chuteRiders(apc).length > 0 && this.chuteHexes(apc).length > 0; }
+  paradrop(apc) {
+    const ev = { type: 'paradrop', apc: apc.id, drops: [], cash: [] };
+    let hexes = this.chuteHexes(apc);
+    for (const t of this.chuteRiders(apc)) {
+      if (!hexes.length) break;
+      // Wind: der Landepunkt ist nicht steuerbar
+      const k = Math.floor(this.rnd() * hexes.length), [c, r] = hexes.splice(k, 1)[0];
+      apc.passengers = apc.passengers.filter((id) => id !== t.id);
+      t.gearUses.chute--; t.carried = false; t.inApc = null; t.c = c; t.r = r; t.moved = true; t.acted = true;
+      t.chute = { owner: apc.owner, apc: apc.id, fromCz: t.rideFromCz }; t.rideFromCz = true;
+      ev.drops.push({ t: t.id, c, r });
+      if (this.inCZ(c, r)) this.pay(apc.owner, (this.inHZ(c, r) ? 2 : 1) * 250, 'Taktischer Absetzpunkt', c, r, ev.cash);
+    }
+    apc.acted = true; apc.moved = true;
+    if (ev.drops.length) this.tripStreak(apc, ev.drops[0].c, ev.drops[0].r, ev);
     return ev;
   }
   syncPassengers(apc) { for (const id of apc.passengers || []) { const t = this.get(id); if (t) { t.c = apc.c; t.r = apc.r; } } }
@@ -303,9 +335,10 @@ export class Game {
   canLand(u) {
     return this.isThopter(u) && !u.landed && !u.didLand && u.owner === this.current && !this.unitAt(u.c, u.r, false) && !this.solidAt(u.c, u.r) && this.cost('track', u.c, u.r) !== Infinity;
   }
-  land(u) { u.landed = true; u.didLand = true; u.def = this.landedDef(u.type); u.moved = true; u.acted = true; return { type: 'land', u: u.id }; }
-  canTakeoff(u) { return !!u.landed && !u.acted && u.owner === this.current; }
-  takeoff(u) { u.landed = false; u.def = UNITS[u.type]; u.didLand = true; return { type: 'takeoff', u: u.id }; }
+  // Landen kostet die Bewegung, aber nicht die Aktion: danach Ein- und Aussteigen möglich
+  land(u) { u.landed = true; u.didLand = true; u.landRound = this.round; u.def = this.landedDef(u.type); u.moved = true; return { type: 'land', u: u.id }; }
+  canTakeoff(u) { return !!u.landed && !u.acted && u.landRound !== this.round && u.owner === this.current; }
+  takeoff(u) { u.landed = false; u.def = UNITS[u.type]; return { type: 'takeoff', u: u.id }; }
 
   // ---------- Kampf ----------
   weapon(e) { return WEAPONS[e.def.weapon] || null; }
@@ -353,7 +386,7 @@ export class Game {
     return out;
   }
   coverAt(t) {
-    if (t.isBuilding || this.isAir(t)) return 0;
+    if (t.isBuilding || this.isAir(t) || t.chute) return 0;
     let d = TERRAIN[this.terr(t.c, t.r)].def;
     const b = this.buildingAt(t.c, t.r); if (b && b.def.pass && b.owner === t.owner && b.turnsLeft <= 0) d += b.def.cover || 0;
     return Math.min(0.7, d);
@@ -367,6 +400,7 @@ export class Game {
     const hpF = att.isBuilding ? 1 : 0.35 + 0.65 * (attHp / 100);
     let dmg = w.power * mod * hpF * (1 - this.coverAt(t));
     if (t.isUnit && t.def.tough) dmg *= t.def.tough;
+    if (t.isUnit && t.chute) dmg *= 1.5;   // am Schirm hängend: kaum Deckung
     if (t.isUnit && t.def.cat === 'veh' && this.players[t.owner].perk.vehTough) dmg *= this.players[t.owner].perk.vehTough;
     if (att.isUnit && att.rank) dmg *= RANKS[att.rank].dmg;
     if (t.isUnit && t.rank) dmg *= RANKS[t.rank].taken;
@@ -525,6 +559,8 @@ export class Game {
       const bt = this.bounty(e.owner);
       if (!(e.isUnit && e.def.free)) this.pay(by.owner, amt * bt, bt > 1 ? 'Kopfgeld' : e.isBuilding ? 'Zerstört' : 'Abschuss bestätigt', e.c, e.r, list);
       else this.pay(by.owner, 300, 'Abschuss', e.c, e.r, list);
+      // Aufklärungs-Assist: wer das Ziel markiert hat, kassiert mit
+      if (e.isUnit && e.marked && e.marked.owner === by.owner) { this.pay(by.owner, e.def.cat === 'inf' ? 800 : 1000, 'Aufklärungs-Assist', e.c, e.r, list); this.addXp(by.owner, 'recon', 40); }
     }
     p.stats.lost++;
     p.stats.lostTypes[e.type] = (p.stats.lostTypes[e.type] || 0) + 1;
@@ -546,7 +582,7 @@ export class Game {
   hzOk(c, r) { return this.in(c, r) && distance(c, r, this.cz.c, this.cz.r) <= this.cz.rad - this.hz.rad && this.terr(c, r) !== 'wasser'; }
   // Köpfe in der Zone: Bodeneinheiten (auch Insassen von Bodenfahrzeugen), Hot Zone zählt doppelt
   bodyPos(u) {
-    if (u.dead || u.downed) return null;
+    if (u.dead || u.downed || u.chute) return null;
     if (u.carried) { const v = this.get(u.inApc); if (!v || v.def.mt === 'air') return null; return v; }
     if (u.def.mt === 'air') return null;
     return u;
@@ -826,13 +862,41 @@ export class Game {
     p.credits -= d.cost; p.stats.spent += d.cost; u.cargoP.push(kind);
     return true;
   }
-  canDropPallets(u) { return (u.cargoP || []).length > 0 && !u.acted && u.owner === this.current && !!this.fobCovering(u.owner, u.c, u.r); }
+  canDropPallets(u) { return (u.cargoP || []).some((k) => k !== 'kiste') && !u.acted && u.owner === this.current && !!this.fobCovering(u.owner, u.c, u.r); }
+  // Versorgungskiste: überall abwerfbar (auch aus der Luft), versorgt Trupps daneben
+  crateHexes(u) { return [[u.c, u.r], ...neighbors(u.c, u.r, this.W, this.H)].filter(([c, r]) => this.groundFree(c, r) && !this.buildingAt(c, r) && !this.towerAt(c, r) && this.cost('foot', c, r) !== Infinity && this.safeOwner(c, r) < 0); }
+  canDropCrate(u) { return (u.cargoP || []).includes('kiste') && !u.acted && u.owner === this.current && this.crateHexes(u).length > 0; }
+  dropCrate(u, c, r) {
+    u.cargoP.splice(u.cargoP.indexOf('kiste'), 1);
+    const b = this.addBuilding(u.owner, 'kiste', c, r); b.charges = 3; b.turnsLeft = 0;
+    const ev = { type: 'crate', u: u.id, b: b.id, cash: [] };
+    if (this.inCZ(c, r)) this.pay(u.owner, this.inHZ(c, r) ? 1200 : 600, 'Versorgung abgeworfen', c, r, ev.cash);
+    this.addXp(u.owner, UNITS[u.type].mt === 'air' ? 'pilot' : 'driver', 40);
+    if (!(u.cargoP || []).length) { u.acted = true; u.moved = true; }
+    return ev;
+  }
+  // Feindliche Bauten übernehmen (Hack an der Konsole des Bauwerks)
+  takeoverTargets(u) {
+    if (!this.isFootInf(u) || u.acted || u.downed) return [];
+    return this.buildings.filter((b) => !b.dead && b.owner !== u.owner && b.turnsLeft <= 0 && !['hq', 'fob'].includes(b.type) && distance(b.c, b.r, u.c, u.r) <= 1
+      && !this.units.some((x) => !x.dead && !x.carried && !x.downed && x.owner === b.owner && distance(x.c, x.r, b.c, b.r) <= 1));
+  }
+  takeover(u, b) {
+    const from = b.owner; b.owner = u.owner; b.fob = this.fobCovering(u.owner, b.c, b.r)?.id || 0; b.hack = null;
+    u.acted = true; u.moved = true; u.facing = ang(u.c, u.r, b.c, b.r);
+    const ev = { type: 'takeover', u: u.id, b: b.id, from, cash: [] };
+    this.pay(u.owner, 400 * this.hzMult(b.c, b.r), 'Bau übernommen', b.c, b.r, ev.cash); this.addXp(u.owner, 'assault', 30);
+    if (from === 0) this.say(`${b.def.name} wurde vom Feind übernommen!`, 'bad', 0);
+    return ev;
+  }
   dropPallets(u) {
     const f = this.fobCovering(u.owner, u.c, u.r);
     const near = distance(f.c, f.r, this.cz.c, this.cz.r) <= this.cz.rad + 3;
-    const ev = { type: 'pallet', u: u.id, b: f.id, items: [...u.cargoP], cash: [] };
-    for (const k of u.cargoP) { f.stock[k] = (f.stock[k] || 0) + PALLETS[k].amount; if (near) this.pay(u.owner, PAY.pallet, 'Lieferprämie', f.c, f.r, ev.cash); this.addXp(u.owner, u.def.mt === 'air' ? 'pilot' : 'driver', 50); }
-    u.cargoP = []; u.acted = true; u.moved = true;
+    const items = u.cargoP.filter((k) => k !== 'kiste');
+    const ev = { type: 'pallet', u: u.id, b: f.id, items, cash: [] };
+    for (const k of items) { f.stock[k] = (f.stock[k] || 0) + PALLETS[k].amount; if (near) this.pay(u.owner, PAY.pallet, 'Lieferprämie', f.c, f.r, ev.cash); this.addXp(u.owner, u.def.mt === 'air' ? 'pilot' : 'driver', 50); }
+    u.cargoP = u.cargoP.filter((k) => k === 'kiste'); u.acted = true; u.moved = true;
+    this.tripStreak(u, f.c, f.r, ev);
     if (u.owner === 0) this.say(near ? 'Paletten abgeladen — Lager aufgefüllt, Lieferprämie kassiert' : 'Paletten abgeladen (Prämie gibt es nur für Vorposten nahe der Control Zone)', 'good');
     return ev;
   }
@@ -884,6 +948,21 @@ export class Game {
     p.deploys = SPZ_DEPLOYS;
     // Hack-Versuche, deren Hacker nicht mehr an der Konsole steht, brechen ab
     for (const b of this.buildings) if (!b.dead && b.hack && b.hack.owner === owner) { const h = this.get(b.hack.by); if (!h || h.downed || distance(h.c, h.r, b.c, b.r) > 1) b.hack = null; }
+    // Versorgungskisten: Trupps daneben verbinden, Munition und Ausrüstung auffüllen
+    for (const b of this.buildings) if (!b.dead && b.type === 'kiste' && b.owner === owner) {
+      let used = false;
+      for (const u of this.units) if (!u.dead && !u.carried && !u.downed && u.owner === owner && u.def.cat === 'inf' && distance(u.c, u.r, b.c, b.r) <= 1) {
+        if (u.hp < 100) { const h = Math.min(100 - u.hp, 20); u.hp += h; ev.push({ type: 'heal', u: u.id, amount: h }); used = true; }
+        if (u.gearUses && u.lo) { const full = infDef(u.lo).gearUses || {}; for (const k in full) if (k !== 'chute' && u.gearUses[k] < full[k]) { u.gearUses[k] = full[k]; used = true; } }
+        if (u.def.builder && (u.supplies || 0) < 20) { u.supplies = 20; used = true; }
+      }
+      if (used && --b.charges <= 0) { b.dead = true; ev.push({ type: 'crateempty', b: b.id }); }
+    }
+    // Fallschirmspringer landen: Überlebensprämie für die Crew
+    for (const u of this.units) if (!u.dead && u.chute && u.chute.owner === owner) {
+      if (!u.downed) { const hz = this.inHZ(u.c, u.r), cz = this.inCZ(u.c, u.r); const cash = []; if (cz) this.pay(owner, hz ? 1000 : 500, 'Sprung überlebt', u.c, u.r, cash); this.addXp(owner, 'pilot', 30); ev.push({ type: 'landed', u: u.id, cash }); }
+      u.chute = null;
+    }
     // Rauch und Markierungen dieser Fraktion verfallen
     this.smoke = this.smoke.filter((x) => x.owner !== owner);
     for (const u of this.units) if (u.marked && u.marked.owner === owner) u.marked = null;
@@ -936,6 +1015,11 @@ export class Game {
   // ---------- Weltphase: Wertung, Zonengeld, Hot Zone, Bohrtürme ----------
   worldPhase() {
     const ev = [];
+    // Wetter: Regenfronten ziehen durch (−1 Sicht für alle)
+    this.weather = this.weather || 'klar';
+    if (this.weatherT > 0) this.weatherT--;
+    else if (this.weather === 'regen') { this.weather = 'klar'; this.weatherT = 4 + Math.floor(this.rnd() * 5); ev.push({ type: 'weather', w: 'klar' }); }
+    else if (this.round > 3 && this.rnd() < 0.18) { this.weather = 'regen'; this.weatherT = 3 + Math.floor(this.rnd() * 3); ev.push({ type: 'weather', w: 'regen' }); this.say('Regenfront zieht auf — Sicht für alle 1 Feld weniger', 'warn', 0); }
     // 1. Wertung
     const lead = this.leader();
     const heads = this.players.map((p) => ({ ...p.heads }));
@@ -993,6 +1077,7 @@ export class Game {
     if (e.isBuilding) return e.def.sight || 1;
     let s = e.def.sight + (RANKS[e.rank || 0].sight || 0);
     if (e.def.mt !== 'air') { s += TERRAIN[this.terr(e.c, e.r)].sight || 0; if (this.isNight()) s -= 1; }
+    if (this.weather === 'regen') s -= 1;
     if (e.downed) s = 1;
     return Math.max(1, s);
   }
@@ -1022,12 +1107,12 @@ export class Game {
     return JSON.stringify({ v: 1, W: this.W, H: this.H, seed: this.map.seed, ter: this.map.ter, round: this.round, current: this.current, target: this.target, spzUnlocked: this.spzUnlocked,
       players: this.players, units: this.units.filter((u) => !u.dead).map(strip), buildings: this.buildings.filter((b) => !b.dead).map(strip),
       cz: this.cz, hz: this.hz, towers: this.towers, known: this.known.map((s) => [...s]), codeUses: this.codeUses, discovered: [...this.discovered], mines: this.mines, smoke: this.smoke, xp: this.xp,
-      diffName: this.diffName, settings: this.settings || null, konto: !!this.konto });
+      diffName: this.diffName, settings: this.settings || null, konto: !!this.konto, rookie: !!this.rookie, weather: this.weather || 'klar', weatherT: this.weatherT || 0 });
   }
   static restore(map, data, diff) {
     map.ter = data.ter;
     const g = new Game(map, { diff, factions: data.players.map((p) => p.faction), target: data.target });
-    g.diffName = data.diffName; g.round = data.round; g.current = 0; g.settings = data.settings || null; g.konto = data.konto;
+    g.diffName = data.diffName; g.rookie = !!data.rookie; g.weather = data.weather || 'klar'; g.weatherT = data.weatherT || 0; g.round = data.round; g.current = 0; g.settings = data.settings || null; g.konto = data.konto;
     g.spzUnlocked = data.spzUnlocked;
     g.players = data.players.map((p) => ({ ...p, perk: FACTIONS[p.faction].perk || {} }));
     g.units = data.units.map((u) => ({ ...u, def: u.lo ? infDef(u.lo) : u.landed ? g.landedDef(u.type) : UNITS[u.type] }));

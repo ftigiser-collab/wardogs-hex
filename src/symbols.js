@@ -59,6 +59,8 @@ export function drawBuildingSymbol(ctx, g, b, x, y, s) {
   } else if (T === 'bohrturm') {
     ctx.rotate(Math.PI / 4); ctx.fillStyle = b.drillOn ? '#ffb040' : col; ctx.fillRect(-7, -7, 14, 14); ctx.strokeRect(-7, -7, 14, 14); ctx.rotate(-Math.PI / 4);
     const f = b.fob && g.byId.get(b.fob); ctx.restore(); label(ctx, x, y, String(f ? f.stock.sprit : 0), s, '#111'); return;
+  } else if (T === 'kiste') {
+    ctx.fillStyle = '#e8e4d8'; ctx.fillRect(-5, -5, 10, 10); ctx.strokeRect(-5, -5, 10, 10); ctx.fillStyle = '#c83a2a'; ctx.fillRect(-1.2, -3.5, 2.4, 7); ctx.fillRect(-3.5, -1.2, 7, 2.4);
   } else if (b.def.weapon) {
     ctx.beginPath(); ctx.arc(0, 0, 6, 0, 6.28); ctx.fillStyle = col; ctx.fill(); ctx.stroke(); ctx.fillStyle = '#111'; ctx.fillRect(0, -1, 8, 2);
   } else {
@@ -102,7 +104,7 @@ export function drawSymbolLayer(ctx, g, s, t, opt = {}) {
   for (const tw of g.towers) { const p = center(tw.c, tw.r); drawTowerSymbol(ctx, g, tw, p.x, p.y, s); }
   for (const b of g.buildings) {
     if (b.dead || b.gone || !g.seen(b)) continue;
-    if (!opt.all && !(b.type === 'hq' || b.type === 'fob' || b.type === 'bohrturm' || b.def.weapon)) continue;
+    if (!opt.all && !(b.type === 'hq' || b.type === 'fob' || b.type === 'bohrturm' || b.type === 'kiste' || b.def.weapon)) continue;
     const p = center(b.c, b.r); drawBuildingSymbol(ctx, g, b, p.x, p.y, s);
   }
   // eigene Minen

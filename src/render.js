@@ -168,6 +168,7 @@ export class Renderer {
     this.fx.draw(ctx, 'add', view);
     this.drawClouds(ctx, dt);
     this.drawLighting(ctx, dt, bs, [...ground, ...air]);
+    if (g.weather === 'regen' || this.rainK > 0.01) this.drawRain(ctx, dt, view);
 
     this.drawFog(ctx);
     this.drawZoneMarks(ctx);
@@ -183,9 +184,20 @@ export class Renderer {
     this.fx.update(dt);
   }
 
-  // Rauchwände, markierte Ziele, eigene Minen
+  // Rauchwände, markierte Ziele, eigene Minen, Fallschirme
   drawSmokeMarks(ctx, units) {
     const g = this.g, t = this.t;
+    for (const u of units) {
+      if (!u.chute && !u.chuteAnim) continue;
+      const p = this.posOf(u), lift = u.chuteAnim != null ? u.chuteAnim : 0.35, y = p.y - 18 - lift * 40, sw = Math.sin(t * 2 + u.id) * 2;
+      ctx.strokeStyle = 'rgba(40,40,30,0.7)'; ctx.lineWidth = 0.7;
+      for (const dx of [-11, -4, 4, 11]) { ctx.beginPath(); ctx.moveTo(p.x + dx + sw, y + 2); ctx.lineTo(p.x, p.y - 4 - lift * 30); ctx.stroke(); }
+      const col = g.players[u.owner].color;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(p.x + 4, p.y + 6, 14, 6, 0, 0, 6.28); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(p.x - 14 + sw, y + 2); ctx.quadraticCurveTo(p.x + sw, y - 16, p.x + 14 + sw, y + 2); ctx.closePath();
+      const gr = ctx.createLinearGradient(p.x - 14, y, p.x + 14, y); gr.addColorStop(0, '#6f7552'); gr.addColorStop(0.5, '#a3aa7c'); gr.addColorStop(1, '#5b6042');
+      ctx.fillStyle = gr; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
+    }
     for (const s of g.smoke) {
       const p = center(s.c, s.r);
       for (let k = 0; k < 7; k++) {
@@ -589,6 +601,20 @@ export class Renderer {
   }
 
   // Wolkenschatten ziehen langsam über das Land
+  drawRain(ctx, dt, v) {
+    this.rainK = (this.rainK || 0) + ((this.g.weather === 'regen' ? 1 : 0) - (this.rainK || 0)) * Math.min(1, dt * 0.8);
+    const k = this.rainK; if (k < 0.01) return;
+    ctx.fillStyle = `rgba(40,50,60,${0.16 * k})`; ctx.fillRect(v.x0, v.y0, v.x1 - v.x0, v.y1 - v.y0);
+    if (!this.drops) this.drops = Array.from({ length: 260 }, () => ({ x: Math.random(), y: Math.random(), l: 0.6 + Math.random() * 0.8, s: 0.7 + Math.random() * 0.6 }));
+    const w = v.x1 - v.x0, h = v.y1 - v.y0, z = this.cam.z;
+    ctx.strokeStyle = `rgba(200,215,230,${0.35 * k})`; ctx.lineWidth = 1 / z; ctx.beginPath();
+    for (const d of this.drops) {
+      d.y += dt * 1.6 * d.s; d.x += dt * 0.25 * d.s; if (d.y > 1) { d.y -= 1; d.x = Math.random(); } if (d.x > 1) d.x -= 1;
+      const x = v.x0 + d.x * w, y = v.y0 + d.y * h, L = 14 * d.l / z;
+      ctx.moveTo(x, y); ctx.lineTo(x + L * 0.25, y + L);
+    }
+    ctx.stroke();
+  }
   drawClouds(ctx, dt) {
     const ms = this.g.map.size;
     if (!this.clouds) this.clouds = Array.from({ length: 7 }, () => ({ x: Math.random() * ms.w, y: Math.random() * ms.h, r: 160 + Math.random() * 220, s: 6 + Math.random() * 8, sq: 0.5 + Math.random() * 0.3 }));

@@ -102,6 +102,7 @@ async function unitTurn(g, act, u, ctx, armorShare) {
 
 // Ausrüstung: C4 gegen Fahrzeug/Bau daneben, Molotow auf Infanterie-Pulks, Rauch für Verwundete
 async function gearTurn(g, act, u, ctx) {
+  if (g.isFootInf(u) && !u.acted) { const t = g.takeoverTargets(u).sort((a, b) => value(g, b) - value(g, a))[0]; if (t && value(g, t) >= 700) { await act.act(g.takeover(u, t)); return true; } }
   if (!u.gearUses || u.acted || u.attacked) return false;
   if (g.gearLeft(u, 'c4')) { const t = g.c4Targets(u).sort((a, b) => value(g, b) - value(g, a))[0]; if (t && value(g, t) >= 1500) { await act.attack2(u, g.c4(u, t)); return true; } }
   if (g.gearLeft(u, 'molotow')) {
@@ -319,6 +320,11 @@ async function logisticsTurn(g, act, u, ctx) {
   const fob = g.fobsOf(owner).sort((a, b) => distance(a.c, a.r, g.cz.c, g.cz.r) - distance(b.c, b.r, g.cz.c, g.cz.r))[0];
   if (!fob) return u.def.transport ? false : (await moveToward(g, act, u, ctx.hq.c, ctx.hq.r), true);
   const drill = g.buildings.find((b) => !b.dead && b.owner === owner && b.type === 'bohrturm' && b.fob === fob.id);
+  if ((u.cargoP || []).includes('kiste')) {
+    // Kiste in die Zone, möglichst neben eigene Trupps
+    if (g.canDropCrate(u) && g.inCZ(u.c, u.r)) { const hx = g.crateHexes(u).sort((a, b) => distance(a[0], a[1], g.hz.c, g.hz.r) - distance(b[0], b[1], g.hz.c, g.hz.r))[0]; await act.act(g.dropCrate(u, hx[0], hx[1])); if (!(u.cargoP || []).length) return true; }
+    else { await moveToward(g, act, u, g.hz.c, g.hz.r, g.reachable(u, g.moveOf(u))); if (alive(u) && g.canDropCrate(u) && g.inCZ(u.c, u.r)) { const hx = g.crateHexes(u)[0]; await act.act(g.dropCrate(u, hx[0], hx[1])); } return true; }
+  }
   if ((u.cargoP || []).length) {
     if (g.canDropPallets(u)) { await act.act(g.dropPallets(u)); return true; }
     await moveToward(g, act, u, fob.c, fob.r, g.reachable(u, g.moveOf(u)));
@@ -330,6 +336,9 @@ async function logisticsTurn(g, act, u, ctx) {
     const reserve = 1500;
     const hasB = (t) => g.buildings.some((b) => !b.dead && b.owner === owner && b.type === t && b.fob === fob.id);
     const want = drill && fob.stock.sprit < 8 ? 'sprit' : fob.stock.bau < 40 ? 'bau' : (hasB('werkstatt') || hasB('stingray')) && (fob.stock.mech || 0) < 10 ? 'mech' : (drill || hasB('tankstelle')) && fob.stock.sprit < 14 ? 'sprit' : null;
+    const crates = g.buildings.filter((b) => !b.dead && b.owner === owner && b.type === 'kiste').length;
+    const inZone = g.units.filter((x) => !x.dead && x.owner === owner && x.def.cat === 'inf' && g.inCZ(x.c, x.r)).length;
+    if (!want && !crates && inZone >= 3 && p.credits > 2500 && g.canLoadPallet(u)) { g.loadPallet(u, 'kiste'); await moveToward(g, act, u, g.hz.c, g.hz.r); return true; }
     if (!want) return false;
     while (g.canLoadPallet(u) && p.credits >= PALLETS[want].cost + reserve) g.loadPallet(u, (u.cargoP.length && want === 'sprit' && fob.stock.bau < 20) ? 'bau' : want);
     if (u.cargoP.length) { await moveToward(g, act, u, fob.c, fob.r); return true; }
@@ -354,27 +363,63 @@ async function ferryTurn(g, act, u, ctx) {
     if (alive(u) && g.canFire(u)) { const t = bestShot(g, u); if (t) await act.attack(u, t); }
     return true;
   }
+  const heli = UNITS[u.type].mt === 'air';
   const n0 = (u.passengers || []).length;
-  // Einsteigen lassen, wer daneben steht und weit von der Zone ist
-  if (!u.moved && n0 < u.def.transport) {
-    const riders = g.units.filter((t) => g.canBoard(u, t) && distance(t.c, t.r, g.cz.c, g.cz.r) > g.cz.rad + 2 && !t.def.builder || (g.canBoard(u, t) && t.def.builder && g.fobsOf(owner).length === 0 && distance(t.c, t.r, g.cz.c, g.cz.r) > g.cz.rad + 2));
-    for (const t of riders) { if ((u.passengers || []).length >= u.def.transport) break; await act.board(u, t); }
+  const wantsRide = (t) => g.isFootInf(t) && t.owner === owner && !t.carried && !t.downed && !t.acted && !t.fresh && distance(t.c, t.r, g.cz.c, g.cz.r) > g.cz.rad + 2 && (!t.def.builder || g.fobsOf(owner).length === 0);
+  // Hubschrauber: zum Aufnehmen landen, voll beladen wieder starten
+  if (heli && u.landed) {
+    if (n0 < u.def.transport) for (const t of g.units.filter((t) => wantsRide(t) && g.canBoard(u, t))) { if ((u.passengers || []).length >= u.def.transport) break; await act.board(u, t); }
+    const n1 = (u.passengers || []).length;
+    const waitingNear = g.units.some((t) => wantsRide(t) && distance(t.c, t.r, u.c, u.r) <= 3);
+    if (n1 && g.unloadHexes(u).length && (g.inCZ(u.c, u.r) || distance(u.c, u.r, g.cz.c, g.cz.r) <= g.cz.rad + 1)) {
+      while ((u.passengers || []).length && !u.acted) { const hx = g.unloadHexes(u).sort((a, b) => distance(a[0], a[1], g.hz.c, g.hz.r) - distance(b[0], b[1], g.hz.c, g.hz.r))[0]; if (!hx) break; await act.unload(u, hx[0], hx[1]); }
+      return true;
+    }
+    if (g.canTakeoff(u) && (n1 >= u.def.transport || (n1 && !waitingNear) || (!n1 && !waitingNear))) await act.land(u, false);
+    else return true;   // stehen bleiben, auf Fahrgäste warten
+  }
+  if (heli && !u.landed && n0 < u.def.transport && !u.moved) {
+    // wartende Trupps in der Nähe? hin und landen
+    const riders = g.units.filter((t) => wantsRide(t) && g.inSafe(t.c, t.r, owner));
+    if (riders.length >= Math.min(2, u.def.transport) || (riders.length && !n0)) {
+      const tgt = nearest(u, riders), reach = g.reachable(u);
+      let best = null, bd = Infinity;
+      for (const nn of reach.values()) { if (!nn.end || g.unitAt(nn.c, nn.r, false) || g.solidAt(nn.c, nn.r) || g.cost('track', nn.c, nn.r) === Infinity) continue; const d = distance(nn.c, nn.r, tgt.c, tgt.r); if (d < 1) continue; const sc = d * 10 + nn.cost * 0.1; if (sc < bd) { bd = sc; best = nn; } }
+      if (best && (best.c !== u.c || best.r !== u.r)) await act.move(u, best.c, best.r, reach);
+      if (alive(u) && g.canLand(u) && distance(u.c, u.r, tgt.c, tgt.r) <= 2) await act.land(u, true);
+      return true;
+    }
+  }
+  // Bodenfahrzeuge: einsteigen lassen, wer daneben steht und weit von der Zone ist
+  if (!heli && !u.moved && n0 < u.def.transport) {
+    for (const t of g.units.filter((t) => wantsRide(t) && g.canBoard(u, t))) { if ((u.passengers || []).length >= u.def.transport) break; await act.board(u, t); }
   }
   const n = (u.passengers || []).length;
   if (n) {
-    // Ziel: Feld am Rand der Zone, von dem aus Aussteigen in die Zone möglich ist
+    // Ziel: Feld am Rand der Zone; Hubschrauber suchen einen ruhigen Landeplatz oder springen ab
     const reach = g.reachable(u);
-    const danger = g.isAir(u) ? ctx.air : ctx.danger;
+    const danger = heli ? ctx.air : ctx.danger;
+    const chutes = heli ? g.chuteRiders(u).length : 0;
     let best = null, bs = -1e9;
     for (const nn of reach.values()) {
       if (!nn.end) continue;
       const dz = distance(nn.c, nn.r, g.hz.c, g.hz.r);
-      const s = -dz * 6 - danger[g.i(nn.c, nn.r)] * 30 + (g.inCZ(nn.c, nn.r) ? 10 : 0) - (dz < 1 ? 15 : 0);
+      const landable = !heli || chutes >= n || (!g.unitAt(nn.c, nn.r, false) && !g.solidAt(nn.c, nn.r) && g.cost('track', nn.c, nn.r) !== Infinity);
+      if (!landable) continue;
+      const s = -dz * 6 - danger[g.i(nn.c, nn.r)] * 30 - (heli && chutes < n ? ctx.danger[g.i(nn.c, nn.r)] * 25 : 0) + (g.inCZ(nn.c, nn.r) ? 10 : 0) - (dz < 1 ? 15 : 0);
       if (s > bs) { bs = s; best = nn; }
     }
     if (best && (best.c !== u.c || best.r !== u.r)) await act.move(u, best.c, best.r, reach);
     if (!alive(u)) return true;
-    if (g.inCZ(u.c, u.r) || distance(u.c, u.r, g.cz.c, g.cz.r) <= g.cz.rad + 1) {
+    const atZone = g.inCZ(u.c, u.r) || distance(u.c, u.r, g.cz.c, g.cz.r) <= g.cz.rad + 1;
+    if (heli && atZone && !u.acted) {
+      // Fallschirm, wenn der Boden gefährlich ist oder Landen nicht geht; sonst landen und aussteigen
+      const hot = ctx.danger[g.i(u.c, u.r)] > 1.2;
+      if (g.canParadrop(u) && (hot || !g.canLand(u))) await act.act(g.paradrop(u));
+      else if (g.canLand(u)) { await act.land(u, true); while (alive(u) && (u.passengers || []).length && !u.acted) { const hx = g.unloadHexes(u).sort((a, b) => distance(a[0], a[1], g.hz.c, g.hz.r) - distance(b[0], b[1], g.hz.c, g.hz.r))[0]; if (!hx) break; await act.unload(u, hx[0], hx[1]); } }
+      return true;
+    }
+    if (!heli && atZone) {
       while ((u.passengers || []).length && !u.acted) {
         const hx = g.unloadHexes(u).sort((a, b) => distance(a[0], a[1], g.hz.c, g.hz.r) - distance(b[0], b[1], g.hz.c, g.hz.r))[0];
         if (!hx) break;
@@ -385,6 +430,8 @@ async function ferryTurn(g, act, u, ctx) {
     if (alive(u) && g.canFire(u)) { const t = bestShot(g, u); if (t) await act.attack(u, t); }
     return true;
   }
+  // gelandet und leer in der Zone: wieder starten
+  if (heli && u.landed && g.canTakeoff(u)) await act.land(u, false);
   // Leer: zurück, wenn am HQ Infanterie wartet, sonst kämpfen
   const waiting = g.units.filter((t) => !t.dead && t.owner === owner && g.isFootInf(t) && !t.carried && !t.downed && g.inSafe(t.c, t.r, owner)).length;
   if (waiting && !g.inSafe(u.c, u.r, owner) && (!g.weapon(u) || distance(u.c, u.r, g.cz.c, g.cz.r) > 1)) { await moveToward(g, act, u, ctx.hq.c, ctx.hq.r); return true; }
@@ -446,6 +493,7 @@ async function aiShop(g, act, owner, ctx) {
   if (p.credits > 20000 && count('sph2') < 1 && g.round > 8) { const t = pickUnit(g, owner, ['sph2']); if (t) wish.push(t); }
   const transportCap = units.filter((u) => u.def.transport && u.def.cat !== 'inf' && !u.def.spawnPoint).reduce((a, u) => a + u.def.transport, 0);
   if (!spzFwd && transportCap < 2 + Math.floor(g.round / 10) * 2) wish.push(pickUnit(g, owner, p.credits > 14000 && g.round > 6 ? ['lakota', 'mh6'] : ['pickup', 'humvee', 'wolf', 'kodiak']));
+  if (p.credits > 12000 && !units.some((u) => UNITS[u.type].mt === 'air' && u.def.transport)) wish.push(pickUnit(g, owner, ['lakota', 'mh6']));
   if (count('mgtrupp') < 1 + Math.floor(inf.length / 6)) wish.push('mgtrupp');
   if (count('spaeher') < 1) wish.push('spaeher');
   const filler = ['schuetze', 'schuetze', 'mgtrupp', 'schuetze', 'panzerjaeger', 'sani'];
@@ -454,7 +502,7 @@ async function aiShop(g, act, owner, ctx) {
   const tryBuy = (t) => {
     if (!t) return false;
     let type = t, lo = null;
-    if (TEMPLATES[t] || t === 'rekrut') { lo = t === 'rekrut' ? g.defaultLoadout(owner, t) : templateLoadout(t, (id) => g.canUse(owner, id), Math.max(700, (p.credits - reserve) * 0.3)); if (!lo) return false; type = t === 'rekrut' ? 'rekrut' : roleOf(lo); }
+    if (TEMPLATES[t] || t === 'rekrut') { lo = t === 'rekrut' ? g.defaultLoadout(owner, t) : templateLoadout(t, (id) => g.canUse(owner, id), Math.max(700, (p.credits - reserve) * 0.3)); if (!lo) return false; type = t === 'rekrut' ? 'rekrut' : roleOf(lo); if (!lo.free && units.some((x) => UNITS[x.type].mt === 'air' && x.def.transport)) lo = { ...lo, chute: true }; }
     const d = UNITS[type]; if (!d || d.noBuy) return false;
     if (d.cat === 'inf' ? inf.length + bought >= 22 && type !== 'pionier' : units.length + bought >= 32) return false;
     const at = d.cat === 'inf' && spzFwd ? 'spz' : 'hq';

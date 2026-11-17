@@ -269,6 +269,12 @@ Object.assign(STAT, {
     for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { const x = -8 + i * 8, y = -5 + j * 10; c.fillStyle = '#1e1f1c'; rr(c, x - 3, y - 3, 6, 6, 1); c.fill(); c.strokeStyle = '#555'; c.lineWidth = 0.5; c.beginPath(); c.moveTo(x - 2, y - 2); c.lineTo(x + 2, y + 2); c.moveTo(x + 2, y - 2); c.lineTo(x - 2, y + 2); c.stroke(); }
     c.fillStyle = color; c.fillRect(-13, -10, 1.6, 20); hazard(c, -13, 10, 26, 2);
   }, { bevel: 0.7 }); }),
+  kiste: (color) => part(`w-kiste-${color}`, 34, 32, (L) => { L((c) => {
+    c.fillStyle = lg(c, -8, -7, 8, 7, '#7d8a52', '#4a5330'); rr(c, -9, -7, 18, 14, 1.5); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = 0.6; c.strokeRect(-9, -7, 18, 14); c.beginPath(); c.moveTo(-9, 0); c.lineTo(9, 0); c.stroke();
+    c.fillStyle = '#e8e4d8'; rr(c, -3, -3.5, 6, 7, 1); c.fill(); c.fillStyle = '#c83a2a'; c.fillRect(-0.8, -2.6, 1.6, 5.2); c.fillRect(-2.6, -0.8, 5.2, 1.6);
+    c.fillStyle = color; c.fillRect(-9, -7, 1.6, 14);
+  }, { bevel: 0.7, grime: 0.3 }); }),
   tankstelle: (color) => part(`w-tank-${color}`, 52, 46, (L) => { L((c) => {
     c.fillStyle = 'rgba(70,66,58,0.85)'; rr(c, -18, -15, 36, 30, 3); c.fill();
     for (const y of [-7, 4]) { c.fillStyle = lg(c, -14, y - 4, 6, y + 4, '#e6e2d4', '#8a867a'); rr(c, -15, y - 4, 22, 8, 4); c.fill(); c.fillStyle = '#c84a30'; c.fillRect(-6, y - 4, 2, 8); }
@@ -276,7 +282,7 @@ Object.assign(STAT, {
     c.fillStyle = color; c.fillRect(-18, -15, 1.6, 30);
   }, { bevel: 0.7, grime: 0.4 }); }),
 });
-const WALLISH = { draht: 1, igel: 1, zelt: 1, hesco_s: 1, tuer: 1, tor: 1, lautsprecher: 1, bunker: 1, schutz: 1, stingray: 1, tankstelle: 1 };
+const WALLISH = { kiste: 1, draht: 1, igel: 1, zelt: 1, hesco_s: 1, tuer: 1, tor: 1, lautsprecher: 1, bunker: 1, schutz: 1, stingray: 1, tankstelle: 1 };
 const _drawArt = drawBuildingArt;
 export function drawBuildingArt2(ctx, b, color, t, o = {}) {
   const T = b.type;

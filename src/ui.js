@@ -1,6 +1,6 @@
 // Steuerung: Eingabe, Auswahl, Menüs, Animationen, Rundenablauf — Hundemarke
 import { drawSymbolLayer } from './symbols.js';
-import { UNITS, BUILDINGS, WEAPONS, TERRAIN, MOVE_COST, FACTIONS, ARMOR_MOD, RANKS, AMMO, AMMO_ORDER, PALLETS, BUILD_LIST, PAY, CODE_USES, TRACKS, GUNS, GEAR, VESTS, TEMPLATES, infDef, loadoutCost, roleOf, HAMMER_NAME } from './data.js';
+import { UNITS, BUILDINGS, WEAPONS, TERRAIN, MOVE_COST, FACTIONS, ARMOR_MOD, RANKS, AMMO, AMMO_ORDER, PALLETS, BUILD_LIST, PAY, CODE_USES, TRACKS, GUNS, GEAR, VESTS, TEMPLATES, infDef, loadoutCost, roleOf, HAMMER_NAME, CHUTE_PRICE } from './data.js';
 import { center, pixelToHex, distance, R, ring } from './hex.js';
 import { icon } from './sprites.js';
 import { angDiff } from './util.js';
@@ -345,11 +345,35 @@ export class Controller {
         if (ev.owner !== 0) continue;
         for (const h of ev.at) { const p = center(h.c, h.r); this.r.float(p.x, p.y - 18, `+$${h.hz ? PAY.hz : PAY.cz}`, h.hz ? '#ffc070' : '#9cf58e'); }
         this.pulse('#credits'); this.refresh();
-      } else if (ev.type === 'hzmove') {
+      } else if (ev.type === 'weather') { this.refresh(); this.flash(ev.w === 'regen' ? 'Regenfront: Sicht −1' : 'Der Regen hört auf'); }
+      else if (ev.type === 'hzmove') {
         const p = center(ev.to.c, ev.to.r);
         if (ev.from.c !== ev.to.c || ev.from.r !== ev.to.r) { this.fx.ring(p.x, p.y, 30, '255,160,80', 0.7); }
       } else if (ev.type === 'heal') {
         const u = g.get(ev.u); if (u && g.seen(u)) { const p = this.r.posOf(u); this.r.float(p.x, p.y - 22, `+${ev.amount}`, '#9cf58e'); }
+      } else if (ev.type === 'paradrop') {
+        const apc = g.get(ev.apc); const vis = (apc && apc.owner === 0) || ev.drops.some((d) => g.visible[g.i(d.c, d.r)]);
+        if (vis && apc) {
+          const a = this.r.posOf(apc); const us = ev.drops.map((d) => g.byId.get(d.t)).filter(Boolean);
+          if (apc.owner !== 0) this.ensureVisible(a.x, a.y);
+          for (const u of us) { u.vis = { ...a }; u.chuteAnim = 1; }
+          await this.tween(1.3, (k) => { for (const [i, u] of us.entries()) { const d = ev.drops[i], q = center(d.c, d.r); const kk = Math.min(1, k * 1.15); u.vis = { x: a.x + (q.x - a.x) * kk, y: a.y + (q.y - a.y) * kk }; u.chuteAnim = 1 - kk * 0.65; } });
+          for (const u of us) { u.vis = null; u.chuteAnim = null; }
+          if (apc.owner === 0) this.r.float(a.x, a.y - 40, `${us.length}× Fallschirm`, '#cfe8ff', true);
+        }
+        this.showCash(ev.cash);
+      } else if (ev.type === 'landed') {
+        const u = g.get(ev.u); if (u && u.owner === 0) { const p = center(u.c, u.r); this.fx.dust(p.x, p.y, 5, '150,140,110', 14, 4); }
+        this.showCash(ev.cash);
+      } else if (ev.type === 'crate') {
+        const b = g.get(ev.b), u = g.get(ev.u);
+        if (b && (b.owner === 0 || g.seen(b))) { const p = center(b.c, b.r), a = u ? this.r.posOf(u) : p; b.rise = 0; await this.tween(0.6, (k) => { b.rise = k; }); this.fx.dust(p.x, p.y, 10, '140,130,100', 22, 6); this.r.float(p.x, p.y - 30, 'Versorgungskiste', '#9cf58e', true); }
+        this.showCash(ev.cash);
+      } else if (ev.type === 'crateempty') {
+        const b = g.byId.get(ev.b); if (b) b.gone = true;
+      } else if (ev.type === 'takeover') {
+        const b = g.get(ev.b); if (b && (b.owner === 0 || ev.from === 0 || g.seen(b))) { const p = center(b.c, b.r); this.fx.ring(p.x, p.y, 20, '200,140,255', 0.7); this.r.float(p.x, p.y - 34, `${b.def.name} übernommen`, g.players[b.owner].color, true); }
+        this.showCash(ev.cash);
       } else if (ev.type === 'mine') {
         const p = center(ev.c, ev.r);
         this.fx.flash(p.x, p.y, 70, '255,200,140', 0.3); this.fx.shake = 5; this.fx.dust(p.x, p.y, 20, '110,95,70', 40, 9); this.fx.smoke(p.x, p.y, 6, 9, 1.4); this.fx.spark(p.x, p.y, 14, '255,210,140', 140);
@@ -533,7 +557,7 @@ export class Controller {
       }
       this.mode = 'moved'; this.select(this.sel); return;
     }
-    if (['fob', 'hammer', 'repair', 'revive', 'heal', 'hackfob', 'board', 'unload', 'c4', 'molotow', 'smoke', 'mark', 'mine'].includes(this.mode)) {
+    if (['fob', 'hammer', 'repair', 'revive', 'heal', 'hackfob', 'board', 'unload', 'c4', 'molotow', 'smoke', 'mark', 'mine', 'crate', 'takeover'].includes(this.mode)) {
       const hit = this.r.hl.target.some(([tc, tr]) => tc === c && tr === r);
       const m = this.mode, u = this.sel; this.clearHL(); this.mode = 'idle';
       if (!hit) { this.select(u); return; }
@@ -548,6 +572,8 @@ export class Controller {
       else if (m === 'smoke') await this.doAct(g.smokeAt(u, c, r));
       else if (m === 'mark') { const t = g.markTargets(u).find((x) => x.c === c && x.r === r); if (t) await this.doAct(g.mark(u, t)); if (!u.acted) { this.busy = false; this.select(u); this.refresh(); return; } }
       else if (m === 'mine') await this.doAct(g.placeMine(u, this.mineKind, c, r));
+      else if (m === 'crate') { await this.doAct(g.dropCrate(u, c, r)); }
+      else if (m === 'takeover') { const t = g.takeoverTargets(u).find((x) => x.c === c && x.r === r); if (t) await this.doAct(g.takeover(u, t)); }
       else if (m === 'hackfob') { const t = g.hackFobTargets(u).find((x) => x.c === c && x.r === r); if (t) await this.doAct(g.hackFob(u, t)); }
       else if (m === 'board') { const t = g.units.find((x) => !x.dead && !x.carried && x.c === c && x.r === r && g.canBoard(u, x)); if (t) await this.animBoard(u, t); }
       else if (m === 'unload') {
@@ -880,7 +906,7 @@ export class Controller {
   refresh() {
     const g = this.g, p = g.players[0];
     $('#round').textContent = g.round;
-    const ph = g.dayPhase(); const tz = $('#daytime'); if (tz) { tz.textContent = { morgen: 'Morgen', tag: 'Tag', abend: 'Abend', nacht: 'Nacht' }[ph]; tz.parentElement.classList.toggle('night', ph === 'nacht'); }
+    const ph = g.dayPhase(); const tz = $('#daytime'); if (tz) { tz.textContent = { morgen: 'Morgen', tag: 'Tag', abend: 'Abend', nacht: 'Nacht' }[ph] + (g.weather === 'regen' ? ' · Regen' : ''); tz.parentElement.classList.toggle('night', ph === 'nacht'); }
     $('#credits').textContent = money(p.credits);
     g.updateHeads();
     const lead = g.leader();
@@ -897,8 +923,9 @@ export class Controller {
   updateLog() {
     const el = $('#log');
     const now = performance.now();
-    const items = this.g.log.filter((m) => now - m.t < 7000).slice(-5);
-    const html = items.map((m) => `<div class="msg ${m.kind}" style="opacity:${Math.min(1, (7000 - (now - m.t)) / 1200)}">${m.text}</div>`).join('');
+    const mob = window.innerWidth < 760, life = mob ? 4500 : 6000;
+    const items = this.g.log.filter((m) => now - m.t < life).slice(mob ? -2 : -4);
+    const html = items.map((m) => `<div class="msg ${m.kind}" style="opacity:${Math.min(1, (life - (now - m.t)) / 1000) * 0.92}">${m.text}</div>`).join('');
     if (html !== this._logHtml) { el.innerHTML = html; this._logHtml = html; }
   }
 
@@ -987,27 +1014,42 @@ export class Controller {
     if (!e || e.dead) { el.classList.remove('show'); el.innerHTML = ''; return; }
     const g = this.g, own = e.owner === 0, col = g.players[e.owner].color, myTurn = own && g.current === 0 && !this.busy;
     if (e.isBuilding && e.type === 'hq') return this.showHq(e);
+    el.classList.remove('shop');
     const pct = e.isBuilding ? e.hp / e.maxHp * 100 : e.hp;
     const bar = `<div class="hpbar"><i style="width:${pct}%;background:${pct > 60 ? '#6fdc6a' : pct > 30 ? '#f2d35b' : '#ff6a50'}"></i></div>`;
-    let html = `<div class="p-head"><canvas class="p-icon"></canvas><div><div class="p-name">${e.def.name}</div><div class="p-sub" style="color:${col}">${g.players[e.owner].name}${e.isUnit ? ` · Stärke ${Math.ceil(e.hp)}` : ''}${e.isUnit && e.rank ? ` · <span class="rank r${e.rank}">${'★'.repeat(e.rank)} ${RANKS[e.rank].name}</span>` : ''}</div>${bar}${this.xpBar(e)}</div>${e.isUnit ? `<button class="more" data-a="expand">${this.expanded ? 'Weniger' : 'Details'}</button>` : ''}<button class="x" data-a="close">×</button></div>`;
+    const waitBtn = e.isUnit && myTurn && !e.downed ? (this.waiting(e) ? '<button class="ib" data-a="unwait" title="Warten beenden">▶</button>' : !e.acted ? '<button class="ib" data-a="wait" title="Warten: Einheit pausiert 2 Runden">⏸</button>' : '') : '';
+    let html = `<div class="p-head"><canvas class="p-icon"></canvas><div><div class="p-name">${e.def.name}</div><div class="p-sub" style="color:${col}">${g.players[e.owner].name}${e.isUnit ? ` · ${Math.ceil(e.hp)}` : ''}${e.isUnit && e.rank ? ` · <span class="rank r${e.rank}">${'★'.repeat(e.rank)}</span>` : ''}</div>${bar}${this.xpBar(e)}</div>${waitBtn}<button class="ib" data-a="expand" title="Details">${this.expanded ? '▾' : 'ⓘ'}</button><button class="ib x" data-a="close" title="Schließen">×</button></div>`;
     if (e.isUnit) {
       const w = g.weapon(e);
-      const zone = g.inHZ(e.c, e.r) ? '<span class="tag hz">Hot Zone ×2</span>' : g.inCZ(e.c, e.r) ? '<span class="tag cz">Control Zone</span>' : '';
-      html += `<div class="p-grid">
-        <span>Bewegung</span><b>${g.moveOf(e)} (${MT_NAME[e.def.mt] || 'Ketten'})${e.suppressed ? ' · niedergehalten' : ''}</b>
+      // kompakte Statuszeile
+      const chips = [];
+      if (g.inHZ(e.c, e.r)) chips.push('<span class="chip hz">HZ ×2</span>'); else if (g.inCZ(e.c, e.r)) chips.push('<span class="chip cz">CZ</span>');
+      if (own) chips.push(`<span class="chip">${e.acted ? 'fertig' : e.fresh ? 'ab nächster Runde' : e.moved ? 'bewegt' : `Bew. ${g.moveOf(e)}`}</span>`);
+      if (w) chips.push(`<span class="chip" title="Stärke · Reichweite">⌖ ${w.power} · R${w.range[0] === w.range[1] ? w.range[0] : w.range.join('–')}</span>`);
+      if (e.def.ammo) chips.push(`<span class="chip">▮ ${e.ammo}/${e.def.ammo}</span>`);
+      if (e.def.transport) chips.push(`<span class="chip">👥 ${(e.passengers || []).length}/${e.def.transport}</span>`);
+      if (e.def.pallets) chips.push(`<span class="chip">▦ ${(e.cargoP || []).length}/${e.def.pallets}</span>`);
+      if (e.gearUses) for (const [k, n] of Object.entries(e.gearUses)) if (n > 0) chips.push(`<span class="chip">${k === 'chute' ? '🪂' : GEAR[k]?.name.split(/[- ]/)[0]} ×${n}</span>`);
+      if (e.def.builder) chips.push(`<span class="chip">▦ ${e.supplies || 0}</span>`);
+      if (e.chute) chips.push('<span class="chip warn">am Fallschirm · +50 % Schaden</span>');
+      if (e.marked) chips.push('<span class="chip warn">markiert</span>');
+      if (e.suppressed) chips.push('<span class="chip warn">niedergehalten</span>');
+      if (e.downed) chips.push(`<span class="chip warn">verwundet · ${e.downed} R.</span>`);
+      if (e.landed) chips.push('<span class="chip">gelandet</span>'); else if (UNITS[e.type].mt === 'air') chips.push('<span class="chip">in der Luft</span>');
+      html += `<div class="p-chips">${chips.join('')}</div>`;
+      if (myTurn && !e.downed) html += this.unitActions(e);
+      if (own && e.downed) html += '<div class="p-hint">Ein Sanitäter daneben kann ihn retten</div>';
+      const zone = g.inHZ(e.c, e.r) ? 'Hot Zone ×2' : g.inCZ(e.c, e.r) ? 'Control Zone' : '';
+      html += `<div class="p-detail"><div class="p-grid">
+        <span>Bewegung</span><b>${g.moveOf(e)} (${MT_NAME[e.def.mt] || 'Ketten'})</b>
         <span>Panzerung</span><b>${ARMOR_NAME[e.def.armor]}</b>
         ${w ? `<span>Waffe</span><b>Stärke ${w.power} · Reichweite ${w.range[0] === w.range[1] ? w.range[0] : w.range.join('–')}${w.air ? ' · Luft' : ''}${w.ground ? '' : ' (nur Luft)'}${w.ammoSel ? ` · ${AMMO[e.ammoType || 'fmj'].name}` : ''}</b>` : ''}
-        ${e.def.ammo ? `<span>Munition</span><b>${e.ammo} / ${e.def.ammo}</b>` : ''}
-        ${e.def.transport ? `<span>Insassen</span><b>${(e.passengers || []).map((id) => g.get(id)?.def.name).filter(Boolean).join(', ') || 'leer'} (${(e.passengers || []).length}/${e.def.transport})</b>` : ''}
-        ${e.def.pallets ? `<span>Paletten</span><b>${(e.cargoP || []).map((k) => PALLETS[k].name).join(', ') || 'keine'} (${(e.cargoP || []).length}/${e.def.pallets})</b>` : ''}
+        ${e.def.transport ? `<span>Insassen</span><b>${(e.passengers || []).map((id) => g.get(id)?.def.name).filter(Boolean).join(', ') || 'leer'}</b>` : ''}
+        ${e.def.pallets ? `<span>Paletten</span><b>${(e.cargoP || []).map((k) => PALLETS[k].name).join(', ') || 'keine'}</b>` : ''}
         ${e.def.spawnPoint ? `<span>Antenne</span><b>${e.antenna ? 'intakt — Einsatzpunkt aktiv' : 'zerstört — Pionier oder HQ repariert'}</b>` : ''}
-        ${e.def.flares ? `<span>Täuschkörper</span><b>${e.flareReady ? 'bereit' : 'verbraucht (nächste Runde neu)'}</b>` : ''}
-        ${e.downed ? `<span>Zustand</span><b style="color:#ff8a6a">Verwundet — verblutet in ${e.downed} ${e.downed === 1 ? 'Runde' : 'Runden'}</b>` : ''}
-        ${e.def.mt !== 'air' ? `<span>Gelände</span><b>${TERRAIN[g.terr(e.c, e.r)].name} (${Math.round(g.coverAt(e) * 100)} % Deckung) ${zone}</b>` : `<span>Lage</span><b>${zone || 'außerhalb der Zone'} ${e.landed ? '· gelandet' : '· in der Luft (zählt nicht als Kopf)'}</b>`}
-      </div><div class="p-desc">${e.def.desc}</div>`;
-      if (myTurn && !e.downed) html += this.unitActions(e);
-      if (own && e.downed) html += '<div class="p-state">Verwundet — ein Sanitäter auf einem Nachbarfeld kann ihn retten</div>';
-      html += `<div class="p-detail">${this.profileHtml('unit', e.type, e.def)}</div>`;
+        ${e.def.flares ? `<span>Täuschkörper</span><b>${e.flareReady ? 'bereit' : 'verbraucht'}</b>` : ''}
+        ${e.def.mt !== 'air' ? `<span>Gelände</span><b>${TERRAIN[g.terr(e.c, e.r)].name} (${Math.round(g.coverAt(e) * 100)} % Deckung) ${zone}</b>` : ''}
+      </div><div class="p-desc">${e.def.desc}</div>${this.profileHtml('unit', e.type, e.def)}</div>`;
     } else html += this.buildingHtml(e, myTurn);
     el.innerHTML = html;
     el.classList.add('show');
@@ -1016,66 +1058,94 @@ export class Controller {
     if (ic) { const src = icon(e.isUnit ? 'unit' : 'bld', e.type, col), d = Math.min(3, window.devicePixelRatio || 1); ic.width = 60 * d; ic.height = 45 * d; const ix = ic.getContext('2d'); ix.imageSmoothingQuality = 'high'; ix.drawImage(src, 0, 0, ic.width, ic.height); }
     this.paintIcons(el);
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = (ev) => this.panelAction(b.dataset.a, b.dataset.t, e, ev));
+    if (!keep) requestAnimationFrame(() => this.keepClear(e));
+  }
+  // Kamera so verschieben, dass die gewählte Einheit nicht unter dem Panel liegt
+  keepClear(e) {
+    const el = $('#panel'); if (!el.classList.contains('show') || !e) return;
+    const pr = el.getBoundingClientRect(), cr = $('#game').getBoundingClientRect();
+    const p = this.r.posOf(e), s = this.r.w2s(p.x, p.y), x = s.x + cr.left, y = s.y + cr.top, m = 50;
+    if (x < pr.left - m || x > pr.right + m || y < pr.top - m || y > pr.bottom + m) return;
+    const freeW = cr.width - (pr.right - cr.left), wideFree = pr.width < cr.width * 0.7;
+    let tx, ty;
+    if (wideFree) { tx = (pr.right - cr.left) + freeW / 2; ty = s.y; }
+    else { tx = s.x; ty = (pr.top - cr.top) / 2 + 30; }
+    const z = this.r.cam.z;
+    this.r.centerOn(p.x - (tx - this.r.vw / 2) / z, p.y - (ty - this.r.vh / 2) / z);
   }
   paintIcons(el) {
     el.querySelectorAll('canvas[data-icon]').forEach((c) => { const [k, t] = c.dataset.icon.split(':'); const src = icon(k, t, this.g.players[0].color), d = Math.min(3, window.devicePixelRatio || 1); c.width = 96 * d; c.height = 72 * d; const ix = c.getContext('2d'); ix.imageSmoothingQuality = 'high'; ix.drawImage(src, 0, 0, c.width, c.height); });
   }
   unitActions(e) {
-    const g = this.g, btns = [];
+    const g = this.g, btns = [], notes = [];
+    const B = (a, label, cls = '', t = '', title = '') => btns.push(`<button data-a="${a}"${t ? ` data-t="${t}"` : ''} class="${cls}"${title ? ` title="${title}"` : ''}>${label}</button>`);
     const tg = g.canFire(e) ? g.targetsFrom(e, e.c, e.r).length : 0;
-    if (tg && e.moved) btns.push(`<span class="hint">${tg} Ziel${tg > 1 ? 'e' : ''} in Reichweite — rot markiert antippen</span>`);
+    if (tg && e.moved) notes.push(`${tg} Ziel${tg > 1 ? 'e' : ''} in Reichweite — rot markiert antippen`);
     const w = g.weapon(e);
-    if (w && w.ammoSel && !e.attacked && !e.acted) btns.push(`<div class="ammo">${AMMO_ORDER.map((k) => `<button data-a="ammo" data-t="${k}" class="${(e.ammoType || 'fmj') === k ? 'on' : ''}" title="${AMMO[k].text}">${AMMO[k].name}</button>`).join('')}</div>`);
+    let ammo = '';
+    if (w && w.ammoSel && !e.attacked && !e.acted) ammo = `<div class="ammo">${AMMO_ORDER.map((k) => `<button data-a="ammo" data-t="${k}" class="${(e.ammoType || 'fmj') === k ? 'on' : ''}" title="${AMMO[k].text}">${AMMO[k].name}</button>`).join('')}</div>`;
     if (e.def.builder && !e.acted) {
-      if (g.fobsOf(0).length < 2 && !g.fobCovering(0, e.c, e.r)) btns.push(g.canDeployFob(e) && g.fobHexes(e).length ? `<button data-a="fob" class="purple">⛺ FOB errichten (${money(BUILDINGS.fob.cash)})</button>` : `<button disabled>FOB: ${g.players[0].credits < BUILDINGS.fob.cash ? 'zu wenig Geld' : 'kein freies Nachbarfeld (≥5 vom HQ, ≥5 von anderen FOBs)'}</button>`);
-      const f = g.buildFob(e);
-      btns.push(`<button data-a="buildmenu" class="${this.buildOpen ? 'on' : ''}">⚒ Bauen… (${HAMMER_NAME[e.def.builder]}${f ? ` · Lager ${f.stock.bau}` : ''} · Rucksack ${e.supplies || 0})</button>`);
-      if (g.canRefill(e)) btns.push('<button data-a="refill">▦ Rucksack auffüllen</button>');
-      if (g.hammerTargets(e).length) btns.push('<button data-a="hammer" class="primary">⚒ Hämmern</button>');
-      if (g.repairTargets(e).length) btns.push('<button data-a="repair">🔧 Reparieren</button>');
+      if (g.fobsOf(0).length < 2 && !g.fobCovering(0, e.c, e.r) && g.canDeployFob(e) && g.fobHexes(e).length) B('fob', `⛺ FOB ${money(BUILDINGS.fob.cash)}`, 'purple');
+      B('buildmenu', `⚒ Bauen ${'I'.repeat(e.def.builder)}`, this.buildOpen ? 'on' : '');
+      if (g.canRefill(e)) B('refill', '▦ Auffüllen');
+      if (g.hammerTargets(e).length) B('hammer', '⚒ Hämmern', 'primary');
+      if (g.repairTargets(e).length) B('repair', '🔧 Reparieren');
     }
     if (e.def.medic && !e.acted) {
-      if (g.reviveTargets(e).length) btns.push('<button data-a="revive" class="primary">✚ Wiederbeleben</button>');
-      if (g.healTargets(e).length) btns.push(`<button data-a="heal">✚ ${e.def.healAll ? 'Alle verbinden' : 'Verbinden'} (+${e.def.heal})</button>`);
+      if (g.reviveTargets(e).length) B('revive', '✚ Wiederbeleben', 'primary');
+      if (g.healTargets(e).length) B('heal', `✚ Verbinden +${e.def.heal}`);
     }
     if (e.gearUses && !e.acted && !e.attacked) {
       const n = (k) => g.gearLeft(e, k);
-      if (n('c4')) btns.push(g.c4Targets(e).length ? `<button data-a="c4" class="danger">💥 C4 (${n('c4')})</button>` : `<button disabled>C4 (${n('c4')}): Ziel muss daneben stehen</button>`);
-      if (n('molotow')) btns.push(`<button data-a="molotow">🔥 Molotow (${n('molotow')})</button>`);
-      if (n('rauch')) btns.push(`<button data-a="smoke">☁ Rauch (${n('rauch')})</button>`);
-      for (const k of ['claymore', 'atmine']) if (n(k)) btns.push(g.mineHexes(e).length ? `<button data-a="mine" data-t="${k}">▲ ${GEAR[k].name} legen (${n(k)})</button>` : '');
+      if (n('c4') && g.c4Targets(e).length) B('c4', `💥 C4`, 'danger');
+      if (n('molotow')) B('molotow', '🔥 Molotow');
+      if (n('rauch')) B('smoke', '☁ Rauch');
+      for (const k of ['claymore', 'atmine']) if (n(k) && g.mineHexes(e).length) B('mine', `▲ ${k === 'claymore' ? 'Claymore' : 'Panzermine'}`, '', k);
     }
-    if (g.canMark(e)) btns.push('<button data-a="mark">◎ Ziel markieren (+20 % Schaden)</button>');
-    if (g.canHack(e)) btns.push('<button data-a="hack" class="purple">⌨ Konsole hacken</button>');
-    else if (g.towerAt(e.c, e.r) && !e.acted && g.foeAdjacent(e)) btns.push('<button disabled>Konsole blockiert: Feind daneben</button>');
-    if (g.canEnterCode(e)) btns.push('<button data-a="code" class="primary">⚡ Code eingeben — Hot Zone holen</button>');
-    else if (g.towerAt(e.c, e.r) && g.towerAt(e.c, e.r).owner === 0 && !e.acted && !g.codeKnown(0)) btns.push(`<button disabled>Code: ${g.knownCount(0)} von 3 Ziffern bekannt</button>`);
-    if (g.canHackFob(e)) { const f = g.hackFobTargets(e)[0]; btns.push(`<button data-a="hackfob" class="purple">⌨ FOB hacken${f.hack && f.hack.owner === 0 ? ' (abschließen)' : ''}</button>`); }
+    if (g.canMark(e)) B('mark', '◎ Markieren', '', '', '+20 % Schaden auf das Ziel, Assist-Prämie beim Abschuss');
+    if (g.canHack(e)) B('hack', '⌨ Hacken', 'purple');
+    else if (g.towerAt(e.c, e.r) && !e.acted && g.foeAdjacent(e)) notes.push('Konsole blockiert: Feind daneben');
+    if (g.canEnterCode(e)) B('code', '⚡ Code eingeben', 'primary');
+    else if (g.towerAt(e.c, e.r) && g.towerAt(e.c, e.r).owner === 0 && !e.acted && !g.codeKnown(0)) notes.push(`Code: ${g.knownCount(0)}/3 Ziffern`);
+    if (g.canHackFob(e)) { const f = g.hackFobTargets(e)[0]; B('hackfob', `⌨ FOB hacken${f.hack && f.hack.owner === 0 ? ' ✓' : ''}`, 'purple'); }
+    if (g.takeoverTargets(e).length) B('takeover', '⌨ Bau übernehmen', 'purple', '', 'Feindliches Bauwerk daneben übernehmen (kein Verteidiger daneben)');
+    const heli = UNITS[e.type].mt === 'air';
     if (e.def.transport) {
       const nP = (e.passengers || []).length;
-      if (!e.acted && g.units.some((t) => g.canBoard(e, t))) btns.push('<button data-a="board">Trupp aufnehmen</button>');
-      if (nP && !e.acted) btns.push(g.unloadHexes(e).length ? `<button data-a="unload" class="primary">Aussteigen (${nP})</button>` : '<button disabled>Kein Platz zum Aussteigen</button>');
+      const near = g.units.some((t) => t !== e && g.isFootInf(t) && t.owner === 0 && !t.carried && !t.downed && distance(t.c, t.r, e.c, e.r) <= 1);
+      if (!e.acted && g.units.some((t) => g.canBoard(e, t))) B('board', '👥 Aufnehmen');
+      else if (heli && !e.landed && near && nP < e.def.transport) notes.push('Zum Aufnehmen erst landen');
+      if (nP && !e.acted) {
+        if (g.unloadHexes(e).length) B('unload', `⇣ Aussteigen (${nP})`, 'primary');
+        if (heli && !e.landed) {
+          if (g.canParadrop(e)) B('paradrop', `🪂 Absprung (${g.chuteRiders(e).length})`, 'primary', '', 'Fallschirm: Landepunkt zufällig daneben, bis zur nächsten Runde wehrlos und +50 % Schaden');
+          notes.push(g.chuteRiders(e).length ? 'Landen zum sicheren Aussteigen oder Fallschirm' : 'Landen zum Aussteigen (kein Fallschirm an Bord)');
+        }
+      }
     }
-    if (g.isFootInf(e) && !e.acted) { const apc = g.units.find((a) => g.canBoard(a, e)); if (apc) btns.push('<button data-a="embark">Einsteigen</button>'); }
-    if (g.canLoadPallet(e)) btns.push(...Object.entries(PALLETS).map(([k, d]) => `<button data-a="pallet" data-t="${k}" ${g.players[0].credits < d.cost ? 'disabled' : ''}>${d.icon} ${d.name} laden (${money(d.cost)})</button>`));
-    if (g.canDropPallets(e)) btns.push('<button data-a="droppal" class="primary">▼ Paletten abladen</button>');
-    else if ((e.cargoP || []).length && !e.acted) btns.push('<button disabled>Abladen nur im eigenen FOB-Bereich</button>');
-    if (g.canLand(e)) btns.push('<button data-a="land">⬇ Landen</button>');
-    if (e.landed) btns.push(g.canTakeoff(e) ? '<button data-a="takeoff" class="primary">⬆ Starten</button>' : '<button disabled>Gelandet — nächste Runde startbereit</button>');
-    if (this.waiting(e)) btns.push('<button data-a="unwait">Warten beenden</button>');
-    else if (!e.acted) btns.push('<button data-a="wait" title="Einheit bleibt diese und die nächsten zwei Runden in Wartestellung">Warten</button>');
-    let html = `<div class="p-actions">${btns.join('')}</div>`;
+    if (g.isFootInf(e) && !e.acted) { const apc = g.units.find((a) => g.canBoard(a, e)); if (apc) B('embark', '👥 Einsteigen'); }
+    if (g.canLoadPallet(e)) for (const [k, d] of Object.entries(PALLETS)) btns.push(`<button data-a="pallet" data-t="${k}" ${g.players[0].credits < d.cost ? 'disabled' : ''} title="${d.desc} · ${money(d.cost)}">${d.icon} ${d.name.replace('palette', '')}</button>`);
+    if (g.canDropPallets(e)) B('droppal', '▼ Abladen', 'primary');
+    else if ((e.cargoP || []).some((k) => k !== 'kiste') && !e.acted) notes.push('Paletten abladen nur im eigenen FOB-Bereich');
+    if (g.canDropCrate(e)) B('crate', '✚ Kiste abwerfen', 'primary');
+    if (g.canLand(e)) B('land', '⬇ Landen');
+    if (e.landed) { if (g.canTakeoff(e)) B('takeoff', '⬆ Starten', 'primary'); else notes.push('Gelandet — startet nächste Runde'); }
+    let html = ammo + (btns.length ? `<div class="p-actions">${btns.join('')}</div>` : '');
+    if (notes.length) html += `<div class="p-hint">${notes.slice(0, 2).join(' · ')}</div>`;
     if (this.buildOpen && e.def.builder && !e.acted) html += this.buildListHtml(e);
-    const state = e.acted ? 'Hat gehandelt' : e.fresh ? 'Frisch eingetroffen — ab nächster Runde einsatzbereit' : e.moved ? (g.canFire(e) ? 'Bewegt — kann noch angreifen' : 'Bewegt') : 'Bereit';
-    return html + `<div class="p-state">${state}</div>`;
+    return html;
   }
   buildListHtml(e) {
-    const g = this.g;
-    const cards = BUILD_LIST.map((t) => {
+    const g = this.g, tier = e.def.builder || 0;
+    const list = BUILD_LIST.filter((t) => this.showAllBuild || (BUILDINGS[t].tier || 1) <= tier);
+    const hidden = BUILD_LIST.length - list.length;
+    const cards = list.map((t) => {
       const d = BUILDINGS[t], why = g.canAct(e) ? g.buildBlock(e, t) : 'Hat gehandelt', ok = !why;
-      return `<button class="card ${ok ? '' : 'locked'}" data-a="pickbuild" data-t="${t}" title="${why || d.desc}"><canvas data-icon="bld:${t}"></canvas><span class="c-name">${d.name}</span><span class="c-cost">${'I'.repeat(d.tier)} · ▦ ${d.bau} · ⚒ ${d.turns}${d.field ? ' · Feld' : ''}</span>${why ? `<span class="c-lock">${why}</span>` : ''}</button>`;
+      return `<button class="card ${ok ? '' : 'locked'}" data-a="pickbuild" data-t="${t}" title="${d.name}: ${why || d.desc}"><canvas data-icon="bld:${t}"></canvas><span class="c-name">${d.name}</span><span class="c-cost">${'I'.repeat(d.tier)} ▦${d.bau} ⚒${d.turns}${d.field ? ' ✦' : ''}</span></button>`;
     }).join('');
-    return `<div class="p-title">Bauen — I/II/III = Hammer klein/mittel/groß, ▦ = Material, ⚒ = Hammerschläge. „Feld" = auch außerhalb des FOB aus dem Rucksack.</div><div class="cards">${cards}</div><div id="pinfo"><div class="pi-empty">Antippen, dann grünes Feld wählen</div></div>`;
+    return `<div class="p-title">▦ Material · ⚒ Hammerschläge · ✦ Feldbau (auch ohne FOB, aus dem Rucksack)</div><div class="cards">${cards}</div>
+      ${hidden || this.showAllBuild ? `<button class="wide slim" data-a="buildall">${this.showAllBuild ? 'Nur baubare zeigen' : `+ ${hidden} Bauten mit größerem Hammer zeigen`}</button>` : ''}
+      <div id="pinfo"><div class="pi-empty">Antippen, dann grünes Feld wählen</div></div>`;
   }
   buildingHtml(e, myTurn) {
     const g = this.g;
@@ -1113,7 +1183,7 @@ export class Controller {
       for (const role of roles) {
         const lo = g.defaultLoadout(0, role), d = UNITS[role] || UNITS.panzerjaeger;
         const ok = myTurn && !!lo && g.canBuy(0, role === 'flak' ? 'panzerjaeger' : role, this.deployAt, lo);
-        const name = role === 'rekrut' ? 'Rekrut' : TEMPLATES[role].name, cost = lo ? loadoutCost(lo) : 0;
+        const name = role === 'rekrut' ? 'Rekrut' : TEMPLATES[role].name, cost = lo ? g.unitCost(0, roleOf(lo), lo) : 0;
         items.push(`<button class="card ${ok ? '' : 'locked'}" data-a="tpl" data-t="${role}" title="${lo ? GUNS[lo.gun].name : ''}"><canvas data-icon="unit:${lo ? roleOf(lo) : 'schuetze'}"></canvas><span class="c-name">${name}</span><span class="c-cost">${role === 'rekrut' ? 'gratis' : money(cost)}</span>${lo ? `<span class="c-sub">${GUNS[lo.gun].name}</span>` : '<span class="c-lock">gesperrt</span>'}</button>`);
       }
     }
@@ -1130,7 +1200,7 @@ export class Controller {
     const last = p.lastOrder.filter((o) => !UNITS[o.type].free && (UNITS[o.type].cat !== 'inf' || g.loadoutOk(0, o.lo)) && (UNITS[o.type].cat === 'inf' || g.canUse(0, o.type)));
     if (myTurn && last.length) { const sum = last.reduce((a, o) => a + g.unitCost(0, o.type, o.lo), 0); html += `<button class="wide" data-a="rebuy" ${p.credits < sum ? 'disabled' : ''}>↻ Letzte Bestellung wiederholen (${last.length}× · ${money(sum)})</button>`; }
     html += '<div class="pi-why" style="color:#cfd6c8">Paletten lädt ihr direkt am Lastwagen oder Transporthubschrauber, solange er in der sicheren Zone steht.</div>';
-    el.innerHTML = html; el.classList.add('show'); el.classList.remove('expanded');
+    el.innerHTML = html; el.classList.add('show', 'shop'); el.classList.remove('expanded');
     this.hqIcon(el, e); this.paintIcons(el);
     if (this.infoSel) { if (this.infoSel.kind === 'lo' && this.shopTab === 'inf') this.showLoadout(e); else if (this.infoSel.kind !== 'lo') this.showInfo(this.infoSel.kind, this.infoSel.type, e); }
     el.querySelectorAll('[data-a]').forEach((b) => b.onclick = (ev) => this.panelAction(b.dataset.a, b.dataset.t, e, ev));
@@ -1147,15 +1217,17 @@ export class Controller {
       const gunSel = Object.entries(GUN_CLS).map(([cls, n]) => `<optgroup label="${n}">${Object.entries(GUNS).filter(([, x]) => x.cls === cls).map(([id, x]) => opt(id, x, lo.gun === id)).join('')}</optgroup>`).join('');
       const gearSel = (i) => `<option value="">— nichts —</option>` + Object.entries(GEAR).filter(([id]) => !(lo.gear || []).includes(id) || lo.gear[i] === id).map(([id, x]) => opt(id, x, lo.gear[i] === id)).join('');
       const vestSel = Object.entries(VESTS).map(([id, x]) => opt(id, x, (lo.vest || 'keine') === id)).join('');
-      const d = infDef(lo), w = WEAPONS[d.weapon], cost = loadoutCost(lo), okLo = g.loadoutOk(0, lo);
+      const d = infDef(lo), w = WEAPONS[d.weapon], cost = g.unitCost(0, d.role, lo), okLo = g.loadoutOk(0, lo);
       const ok = g.current === 0 && !this.busy && okLo && g.canBuy(0, d.role, this.deployAt, lo);
       const gearTxt = (lo.gear || []).map((k) => `<div class="pi-row"><b>${GEAR[k].name}</b> ${GEAR[k].desc}</div>`).join('');
-      box.innerHTML = `<div class="pi-head"><b>${d.name}</b><span>${money(cost)} · Rolle ${UNITS[d.role].name}</span></div>
+      box.innerHTML = `<div class="pi-head"><b>${d.name}</b><span>${money(cost)}${g.rookie ? ' (Rekrutenrabatt)' : ''} · Rolle ${UNITS[d.role].name}</span></div>
         <div class="lo-grid"><label>Waffe<select data-lo="gun">${gunSel}</select></label>
         <label>Ausrüstung 1<select data-lo="g0">${gearSel(0)}</select></label><label>Ausrüstung 2<select data-lo="g1">${gearSel(1)}</select></label>
-        <label>Weste<select data-lo="vest">${vestSel}</select></label></div>
+        <label>Weste<select data-lo="vest">${vestSel}</select></label>
+        <label class="lo-chk"><span><input type="checkbox" data-lo="chute" ${lo.chute ? 'checked' : ''}> 🪂 Fallschirm +${money(CHUTE_PRICE)}</span><em>Einweg, für Absprünge aus dem Hubschrauber</em></label></div>
         <div class="pi-tags"><span>Stärke ${w.power}</span><span>Reichweite ${w.range[0] === w.range[1] ? w.range[0] : w.range.join('–')}</span><span>Bewegung ${d.move}</span><span>Sicht ${d.sight}</span>${d.tough && d.tough < 1 ? `<span>Erleidet ${Math.round(d.tough * 100)} %</span>` : ''}${d.builder ? `<span>${HAMMER_NAME[d.builder]}</span>` : ''}${d.silent ? '<span>Lautlos</span>' : ''}${d.ghillie ? '<span>Ghillie-Tarnung</span>' : ''}</div>
         ${gearTxt}<button class="primary wide" data-a="buylo" ${ok ? '' : 'disabled'}>${okLo ? (p.credits < cost ? 'Zu wenig Geld' : `Kaufen · ${money(cost)}${this.deployAt === 'spz' ? ' · am SPz' : ''}`) : 'Gesperrte Teile im Loadout'}</button>`;
+      const chk = box.querySelector('input[data-lo=chute]'); if (chk) chk.onchange = () => { this.lo = { ...lo, chute: chk.checked }; this.showLoadout(b); };
       box.querySelectorAll('select[data-lo]').forEach((s) => s.onchange = () => {
         const k = s.dataset.lo, v = s.value, n = { ...lo, gear: [...(lo.gear || [])] };
         if (k === 'gun') n.gun = v; else if (k === 'vest') n.vest = v; else { const i = +k[1]; n.gear[i] = v; n.gear = n.gear.filter(Boolean); }
@@ -1219,7 +1291,7 @@ export class Controller {
     if (a === 'tab') { this.shopTab = t; this.infoSel = null; this.showPanel(e); return; }
     if (a === 'deploy') { this.deployAt = t; this.showPanel(e); return; }
     if (a === 'info') { const [kind, type] = t.split(':'); this.infoSel = { kind, type }; this.showInfo(kind, type, e); return; }
-    if (a === 'tpl') { this.lo = g.defaultLoadout(0, t) || { gun: 'kh2002', gear: [], vest: 'keine' }; this.infoSel = { kind: 'lo' }; document.querySelectorAll('#panel .card').forEach((c) => c.classList.toggle('sel', c.dataset.t === t)); this.showLoadout(e); return; }
+    if (a === 'tpl') { const ch = !!(this.lo && this.lo.chute); this.lo = g.defaultLoadout(0, t) || { gun: 'kh2002', gear: [], vest: 'keine' }; if (ch && !this.lo.free) this.lo = { ...this.lo, chute: true }; this.infoSel = { kind: 'lo' }; document.querySelectorAll('#panel .card').forEach((c) => c.classList.toggle('sel', c.dataset.t === t)); this.showLoadout(e); return; }
     if (a === 'buylo') {
       const lo = this.lo, role = lo.free ? 'rekrut' : infDef(lo).role;
       const ev = g.buy(0, role, this.deployAt, lo.free ? null : lo);
@@ -1245,10 +1317,11 @@ export class Controller {
     if (a === 'board') { this.targetMode('board', e, g.units.filter((x) => g.canBoard(e, x)).map((x) => [x.c, x.r]), 'Trupp neben dem Fahrzeug antippen'); return; }
     if (a === 'unload') { this.targetMode('unload', e, g.unloadHexes(e), 'Freies Feld zum Aussteigen antippen'); return; }
     if (a === 'embark') { const apc = g.units.find((x) => g.canBoard(x, e)); if (apc) { this.busy = true; await this.animBoard(apc, e); this.busy = false; this.deselect(); this.refresh(); } return; }
-    if (a === 'land') { if (g.canLand(e)) { this.busy = true; await this.animLand(e, true); this.busy = false; this.deselect(); this.refresh(); } return; }
+    if (a === 'land') { if (g.canLand(e)) { this.busy = true; await this.animLand(e, true); this.busy = false; this.select(e); this.refresh(); } return; }
     if (a === 'takeoff') { if (g.canTakeoff(e)) { this.busy = true; await this.animLand(e, false); this.busy = false; this.select(e); this.refresh(); } return; }
     if (a === 'fob') { this.targetMode('fob', e, g.fobHexes(e), `FOB: freies Nachbarfeld antippen (${money(BUILDINGS.fob.cash)})`); return; }
-    if (a === 'buildmenu') { this.buildOpen = !this.buildOpen; this.showPanel(e); return; }
+    if (a === 'buildmenu') { this.buildOpen = !this.buildOpen; this.showPanel(e, true); return; }
+    if (a === 'buildall') { this.showAllBuild = !this.showAllBuild; this.showPanel(e, true); return; }
     if (a === 'pickbuild') {
       if (!g.canBuild(e, t)) { this.showInfo('bld', t, e); return; }
       this.buildType = t; this.clearHL(); this.r.hl.sel = e; this.mode = 'build'; this.r.hl.build = g.buildHexes(e, t);
@@ -1258,6 +1331,9 @@ export class Controller {
     if (a === 'repair') { this.targetMode('repair', e, g.repairTargets(e).map((x) => [x.c, x.r]), 'Fahrzeug oder Bauwerk antippen'); return; }
     if (a === 'revive') { const ts = g.reviveTargets(e); if (ts.length === 1) { this.busy = true; await this.doAct(g.revive(e, ts[0])); this.busy = false; this.deselect(); return; } this.targetMode('revive', e, ts.map((x) => [x.c, x.r]), 'Verwundeten antippen'); return; }
     if (a === 'heal') { this.targetMode('heal', e, g.healTargets(e).map((x) => [x.c, x.r]), 'Trupp zum Verbinden antippen'); return; }
+    if (a === 'paradrop') { this.busy = true; await this.doAct(g.paradrop(e)); this.busy = false; this.select(e); return; }
+    if (a === 'crate') { const hx = g.crateHexes(e); if (hx.length === 1) { this.busy = true; await this.doAct(g.dropCrate(e, hx[0][0], hx[0][1])); this.busy = false; this.select(e); return; } this.targetMode('crate', e, hx, 'Feld für die Versorgungskiste antippen'); return; }
+    if (a === 'takeover') { const ts = g.takeoverTargets(e); if (ts.length === 1) { this.busy = true; await this.doAct(g.takeover(e, ts[0])); this.busy = false; this.deselect(); return; } this.targetMode('takeover', e, ts.map((x) => [x.c, x.r]), 'Feindliches Bauwerk antippen'); return; }
     if (a === 'refill') { const n = g.refill(e); this.flash(`Rucksack +${n} Material`); this.showPanel(e); return; }
     if (a === 'c4') { this.targetMode('c4', e, g.c4Targets(e).map((x) => [x.c, x.r]), 'C4: Fahrzeug oder Bauwerk daneben antippen'); return; }
     if (a === 'molotow') { this.targetMode('molotow', e, g.throwHexes(e), 'Molotow: Feld in Reichweite 2 antippen (40 gegen Infanterie)'); return; }

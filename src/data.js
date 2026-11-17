@@ -165,7 +165,8 @@ export function roleOf(lo) {
   if (ge.some((k) => GEAR[k].heal) && g.cls === 'smg') return 'sani';
   return 'schuetze';
 }
-export function loadoutCost(lo) { if (lo.free) return 0; return SQUAD_BASE + GUNS[lo.gun].price + (lo.gear || []).reduce((a, k) => a + GEAR[k].price, 0) + VESTS[lo.vest || 'keine'].price; }
+export const CHUTE_PRICE = 50;
+export function loadoutCost(lo) { if (lo.free) return 0; return (lo.chute ? CHUTE_PRICE : 0) + SQUAD_BASE + GUNS[lo.gun].price + (lo.gear || []).reduce((a, k) => a + GEAR[k].price, 0) + VESTS[lo.vest || 'keine'].price; }
 const DEFS = new Map();
 export function infDef(lo, perk = {}) {
   const key = JSON.stringify([lo, perk.infMove || 0]);
@@ -178,7 +179,7 @@ export function infDef(lo, perk = {}) {
     ammo: g.w.ammo || 0, tough: v.taken < 1 ? v.taken : undefined,
     medic: ge.some((x) => x.heal || x.revive), heal: Math.max(0, ...ge.map((x) => x.heal || 0)), healAll: ge.some((x) => x.healAll), revive: Math.max(0, ...ge.map((x) => x.revive || 0)),
     builder: Math.max(0, ...ge.map((x) => x.hammer || 0)) || 0, ghillie: ge.some((x) => x.ghillie), marker: ge.some((x) => x.mark),
-    stealth: g.cls === 'sr' ? 'still' : undefined, silent: !!g.silent, gearUses: Object.fromEntries((lo.gear || []).filter((k) => GEAR[k].uses).map((k) => [k, GEAR[k].uses])) };
+    stealth: g.cls === 'sr' ? 'still' : undefined, silent: !!g.silent, gearUses: { ...Object.fromEntries((lo.gear || []).filter((k) => GEAR[k].uses).map((k) => [k, GEAR[k].uses])), ...(lo.chute ? { chute: 1 } : {}) } };
   d.name = lo.free ? 'Rekrut' : `${base.name} · ${g.name}`;
   d.sight += 1;
   DEFS.set(key, d);
@@ -263,6 +264,7 @@ export const BUILDINGS = {
   tuer:      { name: 'Tür', cat: 'fort', tier: 2, hp: 140, sight: 1, bau: 5, turns: 1, pass: 'ownInf', desc: 'Wandstück mit Tür: nur eigene Infanterie kommt durch.' },
   tor:       { name: 'Tor', cat: 'fort', tier: 2, hp: 220, sight: 1, bau: 17, turns: 2, pass: 'own', desc: 'Fahrzeugtor: eigene Bodeneinheiten kommen durch, Feinde nicht.' },
   hesco:     { name: 'HESCO-Wall', cat: 'fort', tier: 2, hp: 240, sight: 1, bau: 15, turns: 2, desc: 'Große Drahtkörbe: sperrt das Feld, 4 C4-Ladungen stark.' },
+  kiste:     { name: 'Versorgungskiste', cat: 'sup', tier: 1, hp: 60, sight: 1, bau: 0, turns: 0, pass: 'foot', cover: 0.15, desc: 'Abgeworfene Kiste mit Verbandszeug, Munition und Ausrüstung: Eigene Trupps daneben werden zu Rundenbeginn um 20 verbunden und füllen Granaten, Minen, C4 und Rucksack wieder auf. Reicht für 3 Runden.' },
   lautsprecher: { name: 'Lautsprecher', cat: 'sup', tier: 2, hp: 110, sight: 5, bau: 20, turns: 2, desc: 'Mast mit Lautsprechern: Beobachtungsposten mit Sicht 5. Eigene Trupps im Umkreis 1 kämpfen mit +10 % Schaden.' },
   bremer:    { name: 'Bremer-Wand', cat: 'fort', tier: 3, hp: 480, sight: 1, bau: 25, turns: 3, desc: 'Hohe Betonwand: sperrt das Feld, nicht zu überklettern, 7 C4-Ladungen stark.' },
   bunker:    { name: 'Bunker', cat: 'fort', tier: 3, hp: 380, sight: 2, bau: 20, turns: 3, pass: 'ownInf', cover: 0.5, desc: 'Eigene Infanterie darin erhält 50 % Deckung.' },
@@ -283,6 +285,7 @@ export const HAMMER_NAME = { 1: 'Kleiner Hammer', 2: 'Mittlerer Hammer', 3: 'Gro
 export const PALLETS = {
   bau:   { name: 'Materialpalette', icon: '▦', cost: 400, amount: 100, unit: 'Material', desc: '+100 Material für das FOB-Lager' },
   sprit: { name: 'Treibstoffpalette', icon: '⛽', cost: 400, amount: 3, unit: 'Treibstoff', desc: '+3 Treibstoff für Bohrturm und Tankstation' },
+  kiste: { name: 'Versorgungskiste', icon: '✚', cost: 400, amount: 3, unit: 'Versorgung', desc: 'Überall abwerfbar, auch aus der Luft: versorgt Trupps daneben 3 Runden lang' },
   mech:  { name: 'Mechanikpalette', icon: '⚙', cost: 400, amount: 20, unit: 'Mechanik', desc: '+20 Mechanik für Reparaturstation und Stingray' },
 };
 

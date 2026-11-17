@@ -134,7 +134,7 @@ async function start(save) {
     const factions = [opts.faction, ...FAC_KEYS.filter((f) => f !== opts.faction).sort(() => Math.random() - 0.5)];
     const k = readKonto();
     const konto = opts.cash !== 'fest';
-    game = new Game(map, { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH, unlocked: k.unlocked, levels: levelsOf(k), aiLevel: AI_LEVEL[opts.diff] ?? 18 });
+    game = new Game(map, { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH, unlocked: k.unlocked, levels: levelsOf(k), aiLevel: AI_LEVEL[opts.diff] ?? 18, rookie: wardogLevel(k) < 9 });
     game.diffName = opts.diff; game.settings = { ...opts }; game.konto = konto;
     game.setup();
   }
@@ -150,9 +150,11 @@ async function start(save) {
     const xpLine = gain.length ? gain.map(([t, n]) => `${TRACKS[t].icon} ${TRACKS[t].name} +${n} XP${lv1[t] > lv0[t] ? ` → Stufe ${lv1[t]}!` : ''}`).join(' · ') : 'Keine XP gesammelt';
     let line = xpLine + (state === 'won' ? ' (Sieg: XP ×1,25)' : '') + `<br>Wardog-Stufe ${wl0} → ${wardogLevel(k)}`;
     if (game.konto) {
-      const before = k.bank, bonus = state === 'won' ? 5000 : 1000;
+      // Teambeitrag wie in Wardogs: Platzprämie nach Punkten
+      const place = 1 + game.players.filter((x) => x.id !== 0 && x.score > game.players[0].score).length;
+      const before = k.bank, bonus = [0, 5000, 2500, 1000][place];
       k.bank = Math.round(game.players[0].credits + bonus); k.games++; if (state === 'won') k.wins++; k.best = Math.max(k.best || 0, k.bank);
-      line = `Konto: ${money(before)} → ${money(k.bank)} (inkl. ${money(bonus)} ${state === 'won' ? 'Siegprämie' : 'Einsatzprämie'})<br>` + line;
+      line = `Konto: ${money(before)} → ${money(k.bank)} (inkl. ${money(bonus)} Teambeitrag, Platz ${place})<br>` + line;
     }
     writeKonto(k);
     return line + '<br>Neue Teile freischalten: Hauptmenü → Waffenkammer';
