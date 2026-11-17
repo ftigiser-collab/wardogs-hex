@@ -345,7 +345,8 @@ export class Controller {
         if (ev.owner !== 0) continue;
         for (const h of ev.at) { const p = center(h.c, h.r); this.r.float(p.x, p.y - 18, `+$${h.hz ? PAY.hz : PAY.cz}`, h.hz ? '#ffc070' : '#9cf58e'); }
         this.pulse('#credits'); this.refresh();
-      } else if (ev.type === 'weather') { this.refresh(); this.flash(ev.w === 'regen' ? 'Regenfront: Sicht −1' : 'Der Regen hört auf'); }
+      } else if (ev.type === 'coalition') { this.refresh(); }
+      else if (ev.type === 'weather') { this.refresh(); this.flash(ev.w === 'regen' ? 'Regenfront: Sicht −1' : 'Der Regen hört auf'); }
       else if (ev.type === 'hzmove') {
         const p = center(ev.to.c, ev.to.r);
         if (ev.from.c !== ev.to.c || ev.from.r !== ev.to.r) { this.fx.ring(p.x, p.y, 30, '255,160,80', 0.7); }
@@ -910,7 +911,8 @@ export class Controller {
     $('#credits').textContent = money(p.credits);
     g.updateHeads();
     const lead = g.leader();
-    $('#score').innerHTML = g.players.map((x) => `<div class="sc ${lead === x.id ? 'lead' : ''}" data-p="${x.id}" style="--c:${x.color}">${crestImg(x.faction, 18)}<b>${x.score}</b><i style="width:${Math.min(100, x.score / g.target * 100)}%"></i><span title="Köpfe in der Zone (Hot Zone zählt doppelt)">◉${x.heads.w}</span></div>`).join('') + `<div class="sc-t">Ziel ${g.target}</div>`;
+    const ct = g.coalition ?? -1;
+    $('#score').innerHTML = g.players.map((x) => `<div class="sc ${lead === x.id ? 'lead' : ''} ${ct === x.id ? 'hunted' : ''}" data-p="${x.id}" style="--c:${x.color}" title="${ct === x.id ? 'Führt klar — die anderen verbünden sich gegen ' + x.name : ''}">${ct === x.id ? '<em class="hunt">⚔</em>' : ''}${crestImg(x.faction, 18)}<b>${x.score}</b><i style="width:${Math.min(100, x.score / g.target * 100)}%"></i><span title="Köpfe in der Zone (Hot Zone zählt doppelt)">◉${x.heads.w}</span></div>`).join('') + `<div class="sc-t">Ziel ${g.target}</div>`;
     const code = g.codeFor(0);
     $('#code').innerHTML = `<span class="lbl">Turmcode</span><b>${code.map((d, i) => `<em class="${d === null ? 'unk' : ''}">${'ABCD'[i]}${d === null ? '?' : d}</em>`).join('')}</b><span class="cu">${CODE_USES - g.codeUses}×</span>`;
     const ctl = $('#control'); if (ctl) { ctl.textContent = lead >= 0 ? `KONTROLLE: ${g.players[lead].name.toUpperCase()}` : 'KONTROLLE: —'; ctl.style.color = lead >= 0 ? g.players[lead].color : '#cfd6c8'; }

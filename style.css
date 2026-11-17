@@ -388,3 +388,6 @@ button.slim { padding: 4px 8px; font-size: 11.5px; margin-top: 5px; }
 #panel.shop .cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 #panel.shop .card .c-name { font-size: 10.5px; }
 @media (max-width: 760px) { .msg { font-size: 11px; padding: 3px 8px; } #log { width: calc(100vw - 170px); } }
+.sc.hunted { box-shadow: 0 0 0 2px rgba(255,80,60,0.85), 0 0 12px rgba(255,80,60,0.45); position: relative; }
+.sc .hunt { font-style: normal; color: #ff7a62; font-size: 12px; margin-right: 2px; animation: huntpulse 1.4s ease-in-out infinite; }
+@keyframes huntpulse { 50% { opacity: 0.45; } }

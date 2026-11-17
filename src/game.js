@@ -525,7 +525,9 @@ export class Game {
     const ev = [];
     if (mover.dead || mover.carried) return ev;
     if (this.inSafe(mover.c, mover.r, mover.owner)) return ev;
-    const shooters = [...this.units, ...this.buildings].filter((e) => !e.dead && e.reflex && e.owner !== mover.owner && !(e.isUnit && (e.carried || e.downed)));
+    const ct = this.coalition ?? -1;
+    // KI-Verbündete der Koalition geben sich gegenseitig kein Reaktionsfeuer
+    const shooters = [...this.units, ...this.buildings].filter((e) => !e.dead && e.reflex && e.owner !== mover.owner && !(e.isUnit && (e.carried || e.downed)) && !(ct >= 0 && e.owner !== 0 && e.owner !== ct && mover.owner !== ct));
     for (const s of shooters) {
       if (mover.dead || mover.downed) break;
       const w = this.weapon(s);
@@ -548,6 +550,21 @@ export class Game {
   }
 
   // Kopfgeld: Wer den Punkteführer trifft, verdient 50 % mehr — hält drei Fraktionen im Gleichgewicht
+  // Koalition: führt eine Fraktion klar (mind. 3 Punkte und 2 vor dem Zweiten), schließen sich die anderen gegen sie zusammen
+  coalitionTarget() {
+    const s = this.players.map((p) => p.score), top = Math.max(...s), sorted = [...s].sort((a, b) => b - a);
+    if (top < 3 || sorted[0] - sorted[1] < 2) return -1;
+    return s.indexOf(top);
+  }
+  updateCoalition() {
+    const t = this.coalitionTarget();
+    if (t === (this.coalition ?? -1)) return null;
+    const prev = this.coalition ?? -1; this.coalition = t;
+    if (t < 0) { if (prev >= 0) this.say('Die Koalition zerfällt — jeder kämpft wieder für sich', 'info', 0); return { type: 'coalition', t, prev }; }
+    const others = this.players.filter((p) => p.id !== t).map((p) => p.name).join(' und ');
+    this.say(t === 0 ? `${others} verbünden sich gegen euch!` : `${others} verbünden sich gegen ${this.players[t].name}${this.players.length > 2 ? ' — die KI greift jetzt gezielt den Führenden an' : ''}`, t === 0 ? 'bad' : 'warn', 0);
+    return { type: 'coalition', t, prev };
+  }
   bounty(o) { const top = Math.max(...this.players.map((p) => p.score)); return top >= 2 && this.players[o].score === top && this.players.filter((p) => p.score === top).length === 1 ? 1.5 : 1; }
   kill(e, by, list) {
     if (e.dead) return;
@@ -1023,6 +1040,7 @@ export class Game {
   // ---------- Weltphase: Wertung, Zonengeld, Hot Zone, Bohrtürme ----------
   worldPhase() {
     const ev = [];
+    { const c = this.updateCoalition(); if (c) ev.push(c); }
     // Wetter: Regenfronten ziehen durch (−1 Sicht für alle)
     this.weather = this.weather || 'klar';
     if (this.weatherT > 0) this.weatherT--;
@@ -1115,7 +1133,7 @@ export class Game {
     const strip = (o) => { const c = { ...o }; for (const k of ['def', 'vis', 'anim', 'gone', 'hitFlash', 'recoil', 'forceShow', 'crashing', 'aimUntil', 'z', 'bank', 'mineEv', 'firing']) delete c[k]; return c; };
     return JSON.stringify({ v: 1, W: this.W, H: this.H, seed: this.map.seed, ter: this.map.ter, round: this.round, current: this.current, target: this.target, spzUnlocked: this.spzUnlocked,
       players: this.players, units: this.units.filter((u) => !u.dead).map(strip), buildings: this.buildings.filter((b) => !b.dead).map(strip),
-      cz: this.cz, hz: this.hz, towers: this.towers, known: this.known.map((s) => [...s]), codeUses: this.codeUses, discovered: [...this.discovered], mines: this.mines, smoke: this.smoke, xp: this.xp,
+      coalition: this.coalition ?? -1, cz: this.cz, hz: this.hz, towers: this.towers, known: this.known.map((s) => [...s]), codeUses: this.codeUses, discovered: [...this.discovered], mines: this.mines, smoke: this.smoke, xp: this.xp,
       diffName: this.diffName, settings: this.settings || null, konto: !!this.konto, rookie: !!this.rookie, weather: this.weather || 'klar', weatherT: this.weatherT || 0 });
   }
   static restore(map, data, diff) {
@@ -1125,7 +1143,7 @@ export class Game {
     g.spzUnlocked = data.spzUnlocked;
     g.players = data.players.map((p) => ({ ...p, perk: FACTIONS[p.faction].perk || {} }));
     g.units = data.units.map((u) => ({ ...u, def: u.lo ? infDef(u.lo) : u.landed ? g.landedDef(u.type) : UNITS[u.type] }));
-    g.mines = data.mines || []; g.smoke = data.smoke || []; g.xp = { ...g.xp, ...(data.xp || {}) };
+    g.coalition = data.coalition ?? -1; g.mines = data.mines || []; g.smoke = data.smoke || []; g.xp = { ...g.xp, ...(data.xp || {}) };
     g.buildings = data.buildings.map((b) => ({ ...b, def: BUILDINGS[b.type], rise: 1 }));
     g.cz = data.cz; g.hz = data.hz; g.towers = data.towers; g.known = data.known.map((a) => new Set(a)); g.codeUses = data.codeUses;
     g.discovered = new Set(data.discovered || []);

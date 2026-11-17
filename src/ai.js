@@ -8,19 +8,25 @@ function value(g, e) {
   return Math.max(500, v) * (e.downed ? 0.6 : 1) + (e.def.spawnPoint ? 3000 : 0) + (e.passengers || []).length * 1200;
 }
 // Grobe Gefahrenkarte: wie viel Feuer kann ein Gegner nächste Runde auf ein Feld legen
+// Gewicht eines Gegners: in der Koalition zählt der Führende voll, Verbündete kaum
+function foeW(g, owner, o) {
+  const t = g.coalition ?? -1;
+  if (t < 0 || owner === t) return 1;
+  return o === t ? 1 : 0.2;
+}
 function dangerMap(g, owner) {
   const d = new Float32Array(g.W * g.H);
   for (const e of g.units) {
     if (e.dead || e.owner === owner || e.carried || e.downed) continue;
     const w = g.weapon(e); if (!w || !w.ground) continue;
     const reach = (w.noMoveFire ? 0 : Math.min(6, e.def.move)) + w.range[1];
-    const pw = w.power / 100;
+    const pw = w.power / 100 * foeW(g, owner, e.owner);
     for (const [c, r] of ring(e.c, e.r, reach, g.W, g.H)) d[g.i(c, r)] += pw * (distance(c, r, e.c, e.r) <= w.range[1] ? 1.2 : 0.6);
   }
   for (const b of g.buildings) {
     if (b.dead || b.owner === owner || !b.def.weapon || b.turnsLeft > 0) continue;
     const w = WEAPONS[b.def.weapon]; if (!w.ground) continue;
-    for (const [c, r] of ring(b.c, b.r, w.range[1], g.W, g.H)) d[g.i(c, r)] += w.power / 100;
+    for (const [c, r] of ring(b.c, b.r, w.range[1], g.W, g.H)) d[g.i(c, r)] += w.power / 100 * foeW(g, owner, b.owner);
   }
   return d;
 }
@@ -48,6 +54,27 @@ export async function aiTurn(g, act, owner) {
   // Aggressiv, wenn abgehängt: Gefahr zählt weniger, die Zone mehr
   const top = Math.max(...g.players.map((x) => x.score));
   ctx.dw = (top - me.score >= 2 || g.updateHeads()[owner] === 0) ? 0.6 : 1;
+  // Koalition gegen den Führenden: erst sammeln, dann gemeinsam stürmen
+  ctx.target = g.coalition ?? -1;
+  if (ctx.target >= 0 && ctx.target !== owner) {
+    const tgtIn = g.units.filter((e) => !e.dead && !e.carried && !e.downed && e.owner === ctx.target && g.inCZ(e.c, e.r)).length;
+    const hq = ctx.hq || { c: 0, r: 0 };
+    // Sammelpunkt: am Zonenrand auf der eigenen Seite
+    const ang = Math.atan2(hq.r - g.hz.r, hq.c - g.hz.c), d = g.cz.rad + 2;
+    let rc = Math.round(g.hz.c + Math.cos(ang) * d), rr = Math.round(g.hz.r + Math.sin(ang) * d);
+    rc = Math.max(1, Math.min(g.W - 2, rc)); rr = Math.max(1, Math.min(g.H - 2, rr));
+    const fighters = g.ownUnits(owner).filter((u) => !u.carried && !u.downed && !u.def.builder && g.weapon(u) && !g.isAir(u) && !u.def.spawnPoint && !(g.weapon(u).noMoveFire));
+    const near = fighters.filter((u) => distance(u.c, u.r, rc, rr) <= 3 || g.inCZ(u.c, u.r)).length;
+    const need = Math.max(4, Math.min(10, Math.ceil(tgtIn * 0.45)));
+    me.ai = me.ai || {};
+    const partnerStorms = g.players.some((x) => x.id !== owner && x.id !== ctx.target && x.ai && x.ai.storm);
+    if (me.ai.storm && near < need * 0.4 && g.round - (me.ai.stormSince || 0) > 2) { me.ai.storm = false; me.ai.rallySince = g.round; }   // Sturm abgebrochen: neu sammeln
+    else if (!me.ai.storm && (near >= need || (partnerStorms && near >= need * 0.5) || g.round - (me.ai.rallySince ?? g.round) >= 3)) { me.ai.storm = true; me.ai.stormSince = g.round; }
+    if (!me.ai.storm && me.ai.rallySince == null) me.ai.rallySince = g.round;
+    ctx.rally = me.ai.storm ? null : { c: rc, r: rr };
+    ctx.storm = !!me.ai.storm;
+    if (ctx.storm) ctx.dw = Math.min(ctx.dw, 0.4);
+  } else if (me.ai) { me.ai.storm = false; me.ai.rallySince = null; }
   for (let i = 0; i < ctx.danger.length; i++) ctx.danger[i] = Math.min(5, ctx.danger[i]) * ctx.dw;
   // Munition passend zum Gelände der Gegner
   const foes = g.units.filter((e) => !e.dead && e.owner !== owner && !e.carried);
@@ -68,7 +95,7 @@ export async function aiTurn(g, act, owner) {
   for (const b of g.buildings) {
     if (b.dead || b.owner !== owner || !b.def.weapon || !g.canFire(b) || g.state !== 'play') continue;
     let bt = null, b2 = 0;
-    for (const t of g.targetsFrom(b, b.c, b.r, false)) { const f = g.forecast(b, t); const sc = f.dmg / 100 * value(g, t) + (f.kills || f.downs ? value(g, t) * 0.5 : 0); if (sc > b2) { b2 = sc; bt = t; } }
+    for (const t of g.targetsFrom(b, b.c, b.r, false)) { const f = g.forecast(b, t); const sc = (f.dmg / 100 * value(g, t) + (f.kills || f.downs ? value(g, t) * 0.5 : 0)) * foeW(g, owner, t.owner); if (sc > b2) { b2 = sc; bt = t; } }
     if (bt) await act.attack(b, bt);
   }
   if (g.state === 'play') await aiShop(g, act, owner, ctx);
@@ -150,7 +177,10 @@ async function combatTurn(g, act, u, ctx) {
         if (f.kills || f.finish) s += value(g, t) * 0.6;
         if (f.downs) s += value(g, t) * 0.35;
         if (f.flare) s -= 300;
-        if (s > 0 && g.bounty(t.owner) > 1) s *= 1.35;       // gemeinsam gegen den Punkteführer
+        if (ctx.target >= 0 && ctx.target !== u.owner) {
+          if (t.owner === ctx.target) { if (s > 0) s *= 1.8; s += 120; }                    // Koalition: alles auf den Führenden
+          else s *= distance(t.c, t.r, u.c, u.r) <= 1 ? 0.5 : 0.15;   // Verbündete in Ruhe lassen
+        } else if (s > 0 && g.bounty(t.owner) > 1) s *= 1.35;
         if (t.isUnit && g.inHZ(t.c, t.r)) s += 160;          // Köpfe aus der Hot Zone holen
         else if (t.isUnit && g.inCZ(t.c, t.r)) s += 70;
         if (t.isUnit && t.def.spawnPoint && t.antenna) s += 400;
@@ -194,11 +224,23 @@ async function combatTurn(g, act, u, ctx) {
     if (best && (best.c !== u.c || best.r !== u.r)) await act.move(u, best.c, best.r, reach);
     return;
   }
+  // Koalition: am Sammelpunkt warten, bis genug zusammen sind
+  if (ctx.rally && !g.inCZ(u.c, u.r) && !u.def.builder && !u.def.medic) {
+    const R = ctx.rally;
+    if (distance(u.c, u.r, R.c, R.r) > 2) await moveToward(g, act, u, R.c, R.r, reach);
+    else {
+      let bb = null, bsc = -1e9;
+      for (const n of reach.values()) { if (!n.end || distance(n.c, n.r, R.c, R.r) > 2) continue; const sc = g.coverAt({ ...u, c: n.c, r: n.r }) * 40 - ctx.danger[g.i(n.c, n.r)] * 20 - n.cost * 0.3; if (sc > bsc) { bsc = sc; bb = n; } }
+      if (bb && (bb.c !== u.c || bb.r !== u.r)) await act.move(u, bb.c, bb.r, reach);
+    }
+    if (alive(u) && g.canFire(u)) { const t = bestShot(g, u); if (t) await act.attack(u, t); }
+    return;
+  }
   // Bodeneinheit: in die Hot Zone, sonst in die Control Zone, Deckung bevorzugt
   let best = null, bs = -1e9;
   for (const n of reach.values()) {
     if (!n.end) continue;
-    let s = zoneScore(g, u, n.c, n.r) * (ctx.dw < 1 ? 2.2 : 1.5) + g.coverAt({ ...u, c: n.c, r: n.r }) * 40 - ctx.danger[g.i(n.c, n.r)] * (g.inHZ(n.c, n.r) ? 10 : 25) - n.cost * 0.5;
+    let s = zoneScore(g, u, n.c, n.r) * (ctx.storm ? 3 : ctx.dw < 1 ? 2.2 : 1.5) + g.coverAt({ ...u, c: n.c, r: n.r }) * 40 - ctx.danger[g.i(n.c, n.r)] * (g.inHZ(n.c, n.r) ? 10 : 25) - n.cost * 0.5;
     if (g.hzNextHas(n.c, n.r)) s += 8;
     if (s > bs) { bs = s; best = n; }
   }
@@ -209,7 +251,12 @@ async function combatTurn(g, act, u, ctx) {
 }
 function bestShot(g, u) {
   let bt = null, b2 = 20;
-  for (const t of g.targetsFrom(u, u.c, u.r, false)) { const f = g.forecast(u, t); const s = f.dmg / 100 * value(g, t) - f.counter / 100 * value(g, u) + (f.kills || f.downs || f.finish ? value(g, t) * 0.4 : 0); if (s > b2) { b2 = s; bt = t; } }
+  const tg = g.coalition ?? -1;
+  for (const t of g.targetsFrom(u, u.c, u.r, false)) {
+    const f = g.forecast(u, t); let s = f.dmg / 100 * value(g, t) - f.counter / 100 * value(g, u) + (f.kills || f.downs || f.finish ? value(g, t) * 0.4 : 0);
+    if (tg >= 0 && tg !== u.owner) { if (t.owner === tg) s = s * 1.8 + 120; else s *= distance(t.c, t.r, u.c, u.r) <= 1 ? 0.5 : 0.15; }
+    if (s > b2) { b2 = s; bt = t; }
+  }
   return bt;
 }
 async function moveToward(g, act, u, tc, tr, reach = g.reachable(u)) {
@@ -470,6 +517,12 @@ function codeWorth(g, owner, tw) {
   const atTower = near(tw.c, tw.r, owner, 2) - near(tw.c, tw.r, -1, 2) * 0.8;
   const atHz = near(g.hz.c, g.hz.r, owner, 2) - near(g.hz.c, g.hz.r, -1, 2) * 0.8;
   const leading = g.leader() === owner;
+  // Koalition: die Hot Zone dem Führenden unter den Füßen wegziehen
+  const tg = g.coalition ?? -1;
+  if (tg >= 0 && tg !== owner) {
+    const of = (c, r) => g.units.filter((x) => !x.dead && !x.downed && !x.carried && x.owner === tg && distance(x.c, x.r, c, r) <= 2).length;
+    if (of(g.hz.c, g.hz.r) - of(tw.c, tw.r) >= 3) return true;
+  }
   return atTower - atHz >= (leading ? 3 : 1.5);
 }
 
