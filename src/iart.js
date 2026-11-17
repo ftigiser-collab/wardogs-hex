@@ -23,6 +23,9 @@ function weapon(c, g) {
   else if (g === 'tablet') { c.fillStyle = '#1e2124'; rr(c, 2.2, -1.9, 3, 3.8, 0.5); c.fill(); c.fillStyle = 'rgba(120,220,255,0.9)'; c.fillRect(2.7, -1.3, 2, 2.6); }
 }
 function trooper(c, sp, color) {
+  if (sp.ghillie) {   // Ghillie-Anzug: zottelige Umrandung
+    for (let k = 0; k < 26; k++) { const a = k * 0.2417, r0 = 4.6 + (k * 37 % 7) * 0.25; c.strokeStyle = ['#4d5a2c', '#6b7238', '#3b4322', '#7d7a48'][k % 4]; c.lineWidth = 1.1; c.beginPath(); c.moveTo(Math.cos(a) * 2.5, Math.sin(a) * 3.2); c.lineTo(Math.cos(a) * r0, Math.sin(a) * (r0 + 0.8)); c.stroke(); }
+  }
   const cm = camo(color), body = sp.plain ? ['#7d7a6c', '#45433a'] : [tone(cm[0], 1.05), cm[2]], helm = sp.plain ? ['#5a5648', '#2e2c25'] : [tone(cm[1], 1.15), tone(cm[2], 0.9)];
   if (sp.pack) {
     c.fillStyle = lg(c, -6, -3, -2, 3, tone(cm[1], 1.1), cm[2]); rr(c, -6.4, -3.2, 3.8, 6.4, 1); c.fill();
@@ -35,6 +38,8 @@ function trooper(c, sp, color) {
   // Körper mit Plattenträger
   c.fillStyle = lg(c, -4, -5, 4, 5, body[0], body[1]); c.beginPath(); c.ellipse(0, 0, 3.8, 4.9, 0, 0, 6.28); c.fill();
   if (!sp.plain) { c.fillStyle = tone(cm[2], 1.1); rr(c, -2.4, -3.2, 4.2, 6.4, 1); c.fill(); c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(-1.6, -2.6, 0.5, 5.2); c.fillRect(0, -2.6, 0.5, 5.2); }
+  if (sp.vest === 'schwer') { c.fillStyle = lg(c, -3, -4, 3, 4, '#4b4d47', '#23241f'); rr(c, -3.2, -4, 5.6, 8, 1.4); c.fill(); c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(-2.6, -3.4, 4.4, 0.6); c.fillStyle = '#1a1b18'; c.fillRect(-0.6, -3.6, 1.6, 7.2); }
+  else if (sp.vest === 'leicht') { c.strokeStyle = 'rgba(30,30,25,0.6)'; c.lineWidth = 0.6; c.strokeRect(-2.6, -3.4, 4.6, 6.8); }
   for (const s of [-1, 1]) { c.fillStyle = color; c.beginPath(); c.ellipse(-0.5, s * 3.8, 1.7, 1.15, 0, 0, 6.28); c.fill(); }
   if (sp.cross) { c.fillStyle = '#fff'; c.beginPath(); c.arc(-0.5, 3.8, 1, 0, 6.28); c.fill(); c.fillStyle = '#d0302a'; c.fillRect(-0.85, 3.1, 0.7, 1.4); c.fillRect(-1.2, 3.45, 1.4, 0.7); }
   c.strokeStyle = body[1]; c.lineWidth = 1.3; c.lineCap = 'round';
@@ -49,7 +54,7 @@ function trooper(c, sp, color) {
     if (sp.cross) { c.fillStyle = '#fff'; c.fillRect(0.2, -0.9, 1.6, 1.8); c.fillStyle = '#d0302a'; c.fillRect(0.75, -0.75, 0.5, 1.5); c.fillRect(0.3, -0.25, 1.4, 0.5); }
   }
 }
-function trooperPart(type, color, gunArt) { const sp = gunArt ? { ...S[type], gun: gunArt } : S[type]; return part(`in-${type}-${gunArt || ''}-${color}`, 30, 22, (L) => L((c) => trooper(c, sp, color), { bevel: 0.32, grime: 0.3, light: 0.55, shade: 0.5, rim: false }), 7); }
+function trooperPart(type, color, gunArt, vest = '', ghillie = false) { const sp = { ...S[type], ...(gunArt ? { gun: gunArt } : {}), vest, ghillie }; return part(`in-${type}-${gunArt || ''}-${vest}-${ghillie ? 1 : 0}-${color}`, 30, 22, (L) => L((c) => trooper(c, sp, color), { bevel: 0.32, grime: 0.3, light: 0.55, shade: 0.5, rim: false }), 7); }
 const GUN_ART = { ar: 'rifle', dmr: 'rifle', smg: 'smg', sg: 'smg', lmg: 'mg', at: 'launcher', aa: 'launcher', gl: 'launcher' };
 import { GUNS } from './data.js';
 function gunArtOf(u, type) { const g = u.def && u.def.gun && GUNS[u.def.gun]; if (!g) return null; if (type === 'pionier' && g.cls === 'sg') return null; return GUN_ART[g.cls] || null; }
@@ -72,7 +77,7 @@ function drone(ctx, x, y, t) {
 }
 function squad(type) {
   return (ctx, u, color, t, o) => {
-    const sp = S[type], p = trooperPart(type, color, type === 'pionier' || type === 'sani' ? null : gunArtOf(u, type)), a = u.facing, ca = Math.cos(a), sa = Math.sin(a);
+    const sp = S[type], p = trooperPart(type, color, type === 'pionier' || type === 'sani' ? null : gunArtOf(u, type), (u.lo && u.lo.vest) || '', !!(u.def && u.def.ghillie)), a = u.facing, ca = Math.cos(a), sa = Math.sin(a);
     const cm = camo(color), legCol = sp.plain ? '#45433a' : cm[2];
     for (const [px, py] of POS[sp.n]) {
       const x = px * ca - py * sa, y = px * sa + py * ca;

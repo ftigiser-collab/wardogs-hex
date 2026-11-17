@@ -51,6 +51,7 @@ Spin-off von [Sandthron](https://github.com/ftigiser-collab/sandthron) im Settin
 - Türme: +3 Sicht, +1 Reichweite, aber +25–30 % Schaden
 - Mehr Transportplätze, günstigere Preise, deutlich schnelleres Freischalten
 - Koalition sammelt sich innen am CZ-Rand
+- Eigene Grafiken für Ural (6×6 mit Plane), SPH-2 (Radhaubitze), Lakota (Black-Hawk-Stil) und Havoc (Tandemcockpit); schwere/leichte Westen und Ghillie-Anzüge an den Figuren sichtbar
 
 ## Geplant
 - Mehrere Kartentypen und rotierende Zonen

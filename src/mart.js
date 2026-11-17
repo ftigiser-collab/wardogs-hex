@@ -252,7 +252,7 @@ function heliArt(ctx, u, color, t, o, type) {
   if (u.cargoP && u.cargoP.length && !landed) { ctx.strokeStyle = 'rgba(30,30,30,0.6)'; ctx.lineWidth = 0.5; u.cargoP.forEach((k, i) => { const y = (i - (u.cargoP.length - 1) / 2) * 7; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-2, y + zz * 0.3); ctx.stroke(); ctx.save(); ctx.translate(-2, y + zz * 0.3); drawPart(ctx, palletPart(k)); ctx.restore(); }); }
   drawPart(ctx, p);
   // Heckrotor
-  const big = type === 'lastheli' || type === 'lakotamini';
+  const big = type === 'lastheli' || type === 'lakotamini' || type === 'blackhawk' || type === 'blackhawkmini';
   const tx = -H.len / 2 - (big ? 4 : 2), spinT = landed ? 0 : t * 30;
   ctx.save(); ctx.translate(tx + 1, -4.5); ctx.strokeStyle = 'rgba(30,30,28,0.7)'; ctx.lineWidth = 0.9;
   for (let k = 0; k < H.tail; k++) { const a = spinT + k / H.tail * 3.14; ctx.beginPath(); ctx.moveTo(-Math.cos(a) * 4, 0); ctx.lineTo(Math.cos(a) * 4, 0); ctx.stroke(); }
@@ -405,5 +405,88 @@ Object.assign(MDRAW, {
 });
 HELI.ah6r = { len: 38, rot: 25, blades: 4, tail: 2, body(c, cm, color) { HELI.heli.body(c, cm, color); for (const s of [-1, 1]) { c.fillStyle = '#2b2c2f'; rr(c, -1, s * 9 - 1.6, 9, 3.2, 1.4); c.fill(); c.fillStyle = '#c84a30'; c.beginPath(); c.arc(8, s * 9, 0.9, 0, 6.28); c.fill(); } } };
 HELI.lakotamini = { len: 52, rot: 34, blades: 5, tail: 3, body(c, cm, color) { HELI.lastheli.body(c, cm, color); for (const s of [-1, 1]) { c.fillStyle = '#1b1c1e'; for (const y of [-0.5, 0, 0.5]) c.fillRect(4, s * 8.6 + y - 0.25, 7, 0.5); c.fillStyle = '#2c2d30'; rr(c, 2, s * 8.6 - 1.4, 3, 2.8, 0.6); c.fill(); } } };
+
+// ---------- eigene Grafiken: Ural, SPH-2, Lakota (Black-Hawk-Stil), Havoc ----------
+CARS.ural = { len: 42, wid: 17, cab: 0.3, axles: [-14, -6, 12], wr: 3.1 };
+CARS.ural_def = { len: 42, wid: 18, cab: 0.3, axles: [-14, -6, 12], wr: 3.1, box: true, armor: true };
+CARS.ural_def_m249 = { ...CARS.ural_def, gun: 'mg' };
+const uralTarp = (color) => part(`m-uraltarp-${color}`, 30, 20, (L) => { const cm = camo(color); L((c) => {
+  c.fillStyle = lg(c, 0, -7, 0, 7, tone(cm[1], 1.08), tone(cm[2], 0.95)); rr(c, -13, -7.4, 26, 14.8, 2.5); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 0.6; for (let x = -10; x < 13; x += 4.5) { c.beginPath(); c.moveTo(x, -7.4); c.lineTo(x, 7.4); c.stroke(); }
+  c.strokeStyle = 'rgba(255,255,255,0.12)'; c.beginPath(); c.moveTo(-13, -2); c.lineTo(13, -2); c.stroke();
+}, { bevel: 0.7, grime: 0.35 }); });
+function uralArt(ctx, u, color, t, o, k) {
+  const C = CARS[k]; ctx.rotate(u.facing);
+  const h = carHull(color, k, C); drawPartShadow(ctx, h, 4, 5, 0.38); drawPart(ctx, h);
+  const cp = u.cargoP || [];
+  if (cp.length) cp.forEach((kk, i) => { ctx.save(); ctx.translate(-14 + i * 13, 0); ctx.scale(0.9, 0.9); drawPart(ctx, palletPart(kk)); ctx.restore(); });
+  else { ctx.save(); ctx.translate(-7.5, 0); drawPart(ctx, uralTarp(color)); ctx.restore(); }
+  if (C.armor) { ctx.save(); ctx.translate(13.5, 0); drawPart(ctx, uralArmor(color)); ctx.restore(); }
+  if (C.gun) { ctx.save(); ctx.translate(11, 0); ctx.rotate(o.turret ?? 0); ctx.translate(-(o.recoil || 0) * 2, 0); drawPart(ctx, jeepGun(color, false)); ctx.restore(); }
+  seats(ctx, u, -12);
+}
+// SPH-2: Radhaubitze mit großem Kastenturm
+const sphHull = (color) => part(`m-sph-${color}`, 52, 30, (L) => {
+  const cm = camo(color);
+  L((c) => { for (const x of [-15, -6, 3, 13]) for (const y of [-10.2, 10.2]) wheel(c, x, y, 3.1, 1.9); }, { bevel: 0.4, grime: 0.3 });
+  L((c) => {
+    plate(c, [[22, -7], [19, -9.5], [-21, -9.5], [-23, -7.5], [-23, 7.5], [-21, 9.5], [19, 9.5], [22, 7]], tone(cm[0], 1.08), cm[2], -23, -9.5, 22, 9.5);
+    blotches(c, -22, -9, 42, 18, cm, 2222, 8);
+    c.fillStyle = 'rgba(130,190,220,0.85)'; rr(c, 17, -6, 2, 12, 0.6); c.fill();
+    vents(c, -21, -4, 4, 8, 3, true); c.fillStyle = color; c.fillRect(-23, -9.5, 1.6, 19);
+    hazard(c, -23, -1, 2, 2);
+  }, { bevel: 0.7, dust: 0.25 });
+});
+const sphTurret = (color) => part(`m-spht-${color}`, 80, 28, (L) => {
+  const cm = camo(color);
+  L((c) => { c.fillStyle = lg(c, 0, -1.6, 0, 1.6, '#4a4840', '#1c1b17'); c.fillRect(6, -1.6, 32, 3.2); c.fillStyle = '#2a2925'; rr(c, 36, -2.8, 5, 5.6, 1); c.fill(); c.fillRect(38, -3.4, 1, 6.8); c.fillStyle = '#34322c'; rr(c, 6, -2.6, 6, 5.2, 1); c.fill(); }, { bevel: 0.4 });
+  L((c) => { c.fillStyle = lg(c, -10, -9, 10, 9, tone(cm[0], 1.15), cm[2]); rr(c, -13, -9, 21, 18, 2); c.fill(); blotches(c, -12, -8.5, 19, 17, cm, 2323, 6);
+    c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(-11, -8.6, 15, 0.6); c.fillStyle = tone(cm[1], 0.9); rr(c, -9, 3, 5, 4, 0.8); c.fill(); rivets(c, [[-6.5, 5]], 0.4); emblem(c, -2, -4, 1.8, color); }, { bevel: 0.9, dust: 0.2 });
+});
+function sphArt(ctx, u, color, t, o) { hullTurret(ctx, u, color, t, o, sphHull(color), sphTurret(color), null, -6); }
+HELI.blackhawk = { len: 54, rot: 35, blades: 4, tail: 4, body(c, cm, color) {
+  // Rumpf mit Kabine, Cockpitnase und abgeknicktem Heckausleger
+  c.fillStyle = lg(c, -10, -8, 14, 8, tone(cm[0], 1.12), cm[2]);
+  c.beginPath(); c.moveTo(22, 0); c.quadraticCurveTo(21, -5.8, 13, -7); c.lineTo(-10, -7); c.quadraticCurveTo(-14, -6, -14, -3); c.lineTo(-14, 3); c.quadraticCurveTo(-14, 6, -10, 7); c.lineTo(13, 7); c.quadraticCurveTo(21, 5.8, 22, 0); c.closePath(); c.fill();
+  blotches(c, -13, -6.5, 33, 13, cm, 6060, 9);
+  c.fillStyle = lg(c, 0, -2, 0, 2, tone(cm[1], 1.1), cm[2]); c.beginPath(); c.moveTo(-14, -2.6); c.lineTo(-31, -1.3); c.lineTo(-31, 1.3); c.lineTo(-14, 2.6); c.closePath(); c.fill();
+  c.fillStyle = tone(cm[1], 0.95); rr(c, -31, -6.5, 3.4, 13, 1); c.fill();            // Höhenleitwerk
+  c.fillStyle = tone(cm[2], 1.1); rr(c, -33, -1, 4, 2, 0.6); c.fill();
+  // Kabinentüren und Fenster
+  c.fillStyle = 'rgba(0,0,0,0.32)'; for (const s of [-1, 1]) { rr(c, -6, s * 6.2 - 0.7, 11, 1.4, 0.5); c.fill(); }
+  c.fillStyle = 'rgba(150,210,235,0.9)'; c.beginPath(); c.moveTo(21.5, 0); c.quadraticCurveTo(20.5, -4.6, 15, -5.4); c.lineTo(14, 5.4); c.quadraticCurveTo(20.5, 4.6, 21.5, 0); c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 0.4; c.beginPath(); c.moveTo(14.5, 0); c.lineTo(21.5, 0); c.stroke();
+  c.fillStyle = '#2b2a26'; for (const s of [-1, 1]) { rr(c, 2, s * 4.2 - 1.5, 8, 3, 1.4); c.fill(); }   // Triebwerke
+  c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(-10, -6.4, 22, 0.8);
+  c.fillStyle = color; c.fillRect(-16, -2.4, 1.6, 4.8);
+} };
+HELI.blackhawkmini = { len: 54, rot: 35, blades: 4, tail: 4, body(c, cm, color) {
+  HELI.blackhawk.body(c, cm, color);
+  for (const s of [-1, 1]) { c.fillStyle = '#1b1c1e'; for (const y of [-0.5, 0, 0.5]) c.fillRect(8, s * 8.2 + y - 0.25, 7, 0.5); c.fillStyle = '#2c2d30'; rr(c, 5, s * 8.2 - 1.6, 4, 3.2, 0.8); c.fill(); }
+} };
+HELI.havoc = { len: 50, rot: 30, blades: 5, tail: 3, body(c, cm, color) {
+  // schlanker Kampfrumpf mit Tandemcockpit, Stummelflügeln, Kinnkanone
+  c.fillStyle = lg(c, -8, -5, 14, 5, tone(cm[0], 1.1), cm[2]);
+  c.beginPath(); c.moveTo(23, 0); c.quadraticCurveTo(21, -4.2, 12, -4.8); c.lineTo(-6, -4.4); c.quadraticCurveTo(-9, -3.6, -9, 0); c.quadraticCurveTo(-9, 3.6, -6, 4.4); c.lineTo(12, 4.8); c.quadraticCurveTo(21, 4.2, 23, 0); c.closePath(); c.fill();
+  blotches(c, -8, -4.2, 28, 8.4, cm, 2828, 7);
+  c.fillStyle = lg(c, 0, -2, 0, 2, tone(cm[1], 1.1), cm[2]); c.beginPath(); c.moveTo(-9, -2); c.lineTo(-27, -1); c.lineTo(-27, 1); c.lineTo(-9, 2); c.closePath(); c.fill();
+  c.fillStyle = tone(cm[1], 0.95); rr(c, -28, -6, 3, 12, 1); c.fill();
+  c.fillStyle = tone(cm[1], 0.92); rr(c, -1, -13.5, 6, 27, 1.2); c.fill();                   // Flügel
+  for (const s of [-1, 1]) for (const y of [7.5, 11.5]) { c.fillStyle = '#2b2c2f'; rr(c, -3, s * y - 1.5, 10, 3, 1.4); c.fill(); c.fillStyle = '#c84a30'; c.beginPath(); c.arc(7, s * y, 0.9, 0, 6.28); c.fill(); }
+  // Tandemcockpit: zwei getrennte Kanzeln
+  c.fillStyle = 'rgba(150,210,235,0.9)'; rr(c, 15, -2.4, 6, 4.8, 2.2); c.fill(); rr(c, 8, -2.8, 6, 5.6, 2.4); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = 0.5; c.strokeRect(8, -2.8, 6, 5.6);
+  c.fillStyle = '#1e1e1c'; c.fillRect(20, -0.6, 7, 1.2); c.beginPath(); c.arc(20, 0, 1.6, 0, 6.28); c.fill();   // Kinnkanone
+  c.fillStyle = color; c.fillRect(-10, -2.6, 1.4, 5.2);
+} };
+Object.assign(MDRAW, {
+  ural(ctx, u, color, t, o) { uralArt(ctx, u, color, t, o, 'ural'); },
+  ural_def(ctx, u, color, t, o) { uralArt(ctx, u, color, t, o, 'ural_def'); },
+  ural_def_m249(ctx, u, color, t, o) { uralArt(ctx, u, color, t, o, 'ural_def_m249'); },
+  sph2(ctx, u, color, t, o) { sphArt(ctx, u, color, t, o); },
+  lakota(ctx, u, color, t, o) { heliArt(ctx, u, color, t, o, 'blackhawk'); },
+  lakota_mini(ctx, u, color, t, o) { heliArt(ctx, u, color, t, o, 'blackhawkmini'); },
+  havoc(ctx, u, color, t, o) { heliArt(ctx, u, color, t, o, 'havoc'); },
+});
 
 export { palletPart };
