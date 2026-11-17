@@ -313,3 +313,37 @@ button.purple { border-color: rgba(200,140,255,0.6); color: #e2c8ff; background:
   #code { display: none; } #hqbtn, #zonebtn { padding: 7px 7px; }
   #helpbtn { display: none; }
 }
+
+#tacmap { position: fixed; inset: 0; z-index: 60; background: rgba(6,8,6,0.92); display: flex; }
+#tacmap.hidden { display: none; }
+#tacmap canvas { flex: 1; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+#tacmap .tm-close { position: absolute; top: 10px; right: 12px; font-size: 22px; width: 40px; height: 40px; }
+#tacmap .tm-legend { position: absolute; right: 12px; bottom: 12px; background: rgba(15,18,15,0.85); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 3px; color: #dfe4da; max-width: 260px; }
+#tacmap .tm-legend summary { cursor: pointer; font-weight: 700; }
+#tacmap .tm-legend:not([open]) { padding: 6px 10px; }
+#tacmap .tm-legend em { color: #9aa394; font-style: normal; font-size: 11px; }
+#tacmap .lg-cz, #tacmap .lg-hz { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; margin-right: 6px; vertical-align: -2px; }
+#tacmap .lg-hz { border-color: #ffd640; }
+@media (max-width: 700px) { #tacmap .tm-legend { font-size: 10px; max-width: 180px; } }
+
+.box.wide { max-width: 760px; width: min(760px, 96vw); }
+.wk-head { display: flex; gap: 18px; margin: 4px 0 8px; font-size: 14px; }
+.wk-tabs { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 6px; margin: 10px 0; }
+.wk-tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; font-size: 12px; }
+.wk-tabs button i { font-style: normal; font-size: 18px; }
+.wk-tabs button span { color: #a9b2a3; font-size: 11px; }
+.wk-tabs button em { display: block; width: 90%; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden; }
+.wk-tabs button em u { display: block; height: 100%; background: #9cf58e; }
+.wk-tabs button.on { outline: 2px solid #ffd36a; }
+.wk-list { max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.wk-it { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; background: rgba(255,255,255,0.04); }
+.wk-it div { display: flex; flex-direction: column; } .wk-it div span { font-size: 11px; color: #a9b2a3; }
+.wk-it.far { opacity: 0.5; } .wk-it .ok { color: #9cf58e; font-size: 12px; } .wk-it .lock { color: #c9b07a; font-size: 12px; white-space: nowrap; }
+.wk-it button { font-size: 12px; white-space: nowrap; }
+@media (max-width: 700px) { .wk-tabs { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+.card .c-sub { font-size: 10px; color: #a9b2a3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.p-actions button.danger { background: #6a2a20; border-color: #a0483a; }
+.lo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0; }
+.lo-grid label { display: flex; flex-direction: column; font-size: 11px; color: #a9b2a3; gap: 2px; }
+.lo-grid select { background: #1d221c; color: #e6eadf; border: 1px solid rgba(255,255,255,0.18); border-radius: 5px; padding: 5px; font-size: 13px; width: 100%; }
+.lo-grid label:first-child { grid-column: 1 / -1; }

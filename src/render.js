@@ -1,4 +1,5 @@
 // Renderer: Kamera, Gelände, Zonen, Markierungen, Einheiten, Nebel
+import { drawSymbolLayer } from './symbols.js';
 import { center, hexPath, R, HW, ring, distance, pixelToHex } from './hex.js';
 import { drawUnit, drawBuilding } from './sprites.js';
 import { drawTower } from './wart.js';
@@ -42,7 +43,7 @@ export class Renderer {
   }
   zoomAt(sx, sy, f) {
     const before = this.s2w(sx, sy);
-    this.cam.z = clamp(this.cam.z * f, 0.45, 2.2);
+    this.cam.z = clamp(this.cam.z * f, 0.25, 2.2);
     this.cam.x = before.x - sx / this.cam.z; this.cam.y = before.y - sy / this.cam.z;
     this.clampCam();
   }
@@ -153,11 +154,17 @@ export class Renderer {
     const visU = g.units.filter((u) => !u.gone && !u.carried && !u.hidden && (g.seen(u) || u.forceShow));
     const ground = visU.filter((u) => u.def.mt !== 'air').sort((a, b) => this.posOf(a).y - this.posOf(b).y);
     const air = visU.filter((u) => u.def.mt === 'air').sort((a, b) => this.posOf(a).y - this.posOf(b).y);
+    const symMode = cam.z < 0.55; this.symMode = symMode;
+    if (symMode) ctx.globalAlpha = 0.45;
     for (const u of ground) if (inView(this.posOf(u), 60)) this.drawUnitFull(ctx, u);
+    ctx.globalAlpha = 1;
     this.fx.draw(ctx, 'ground', view);
     this.fx.draw(ctx, 'air', view);
+    if (symMode) ctx.globalAlpha = 0.45;
     for (const u of air) if (inView(this.posOf(u), 80)) this.drawUnitFull(ctx, u);
+    ctx.globalAlpha = 1;
     this.drawProjectiles(ctx);
+    this.drawSmokeMarks(ctx, [...ground, ...air]);
     this.fx.draw(ctx, 'add', view);
     this.drawClouds(ctx, dt);
     this.drawLighting(ctx, dt, bs, [...ground, ...air]);
@@ -166,11 +173,40 @@ export class Renderer {
     this.drawZoneMarks(ctx);
     this.drawHighlights(ctx);
 
-    for (const u of [...ground, ...air]) this.drawBadges(ctx, u);
-    for (const b of bs) this.drawBadges(ctx, b);
+    if (symMode) drawSymbolLayer(ctx, g, Math.min(4, 1.15 / cam.z), this.t, { posOf: (u) => this.posOf(u) });
+    else {
+      for (const u of [...ground, ...air]) this.drawBadges(ctx, u);
+      for (const b of bs) this.drawBadges(ctx, b);
+    }
     this.drawPath(ctx);
     this.drawFloaters(ctx, dt);
     this.fx.update(dt);
+  }
+
+  // Rauchwände, markierte Ziele, eigene Minen
+  drawSmokeMarks(ctx, units) {
+    const g = this.g, t = this.t;
+    for (const s of g.smoke) {
+      const p = center(s.c, s.r);
+      for (let k = 0; k < 7; k++) {
+        const a = k * 0.9 + t * 0.15, d = 10 + (k % 3) * 7;
+        const x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d * 0.7, rr = 16 + (k % 2) * 6 + Math.sin(t + k) * 2;
+        const gr = ctx.createRadialGradient(x, y, 2, x, y, rr); gr.addColorStop(0, 'rgba(225,225,215,0.55)'); gr.addColorStop(1, 'rgba(225,225,215,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.28); ctx.fill();
+      }
+    }
+    for (const m of g.mines) {
+      if (m.owner !== 0) continue; const p = center(m.c, m.r);
+      ctx.save(); ctx.translate(p.x + 10, p.y + 8);
+      ctx.fillStyle = m.kind === 'inf' ? '#5a6040' : '#3e3e38'; if (m.kind === 'inf') { ctx.fillRect(-4, -2, 8, 4); ctx.fillStyle = '#c84a30'; ctx.fillRect(-1, -2, 2, 1); } else { ctx.beginPath(); ctx.arc(0, 0, 4, 0, 6.28); ctx.fill(); ctx.fillStyle = '#7a7a70'; ctx.beginPath(); ctx.arc(0, 0, 1.6, 0, 6.28); ctx.fill(); }
+      ctx.restore();
+    }
+    for (const u of units) {
+      if (!u.marked) continue; const p = this.posOf(u), r0 = 15 + Math.sin(t * 5) * 1.5;
+      ctx.strokeStyle = 'rgba(255,70,50,0.9)'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r0, 0, 6.28); ctx.stroke();
+      for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + t; ctx.beginPath(); ctx.moveTo(p.x + Math.cos(a) * (r0 - 4), p.y + Math.sin(a) * (r0 - 4)); ctx.lineTo(p.x + Math.cos(a) * (r0 + 4), p.y + Math.sin(a) * (r0 + 4)); ctx.stroke(); }
+    }
   }
 
   // Fluss: langsam ziehende Glanzlichter
@@ -291,7 +327,7 @@ export class Renderer {
       ctx.restore();
     }
     ctx.save();
-    const turretUnit = ['panzer', 'artillerie', 'jeep', 'rotorjeep', 'spz', 'grad'].includes(u.type);
+    const turretUnit = ['t72', 'l2a6', 'gepard', 'sph2', 'spz', 'kodiak_m249', 'wolf_m2', 'humvee_m249', 'humvee_mini', 'ural_def_m249'].includes(u.type);
     const idleTurret = turretUnit && !(u.aimUntil > this.t) ? Math.sin(this.t * 0.45 + u.id * 1.7) * 0.4 : (u.turretRel || 0);
     const air = u.def.mt === 'air';
     const z = air ? (u.landed && u.z === undefined ? 0 : (u.z ?? 26) + (u.crashing ? 0 : Math.sin(this.t * 2.2 + u.id) * 1.8)) : 0;

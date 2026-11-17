@@ -49,7 +49,10 @@ function trooper(c, sp, color) {
     if (sp.cross) { c.fillStyle = '#fff'; c.fillRect(0.2, -0.9, 1.6, 1.8); c.fillStyle = '#d0302a'; c.fillRect(0.75, -0.75, 0.5, 1.5); c.fillRect(0.3, -0.25, 1.4, 0.5); }
   }
 }
-function trooperPart(type, color) { return part(`in-${type}-${color}`, 30, 22, (L) => L((c) => trooper(c, S[type], color), { bevel: 0.32, grime: 0.3, light: 0.55, shade: 0.5, rim: false }), 7); }
+function trooperPart(type, color, gunArt) { const sp = gunArt ? { ...S[type], gun: gunArt } : S[type]; return part(`in-${type}-${gunArt || ''}-${color}`, 30, 22, (L) => L((c) => trooper(c, sp, color), { bevel: 0.32, grime: 0.3, light: 0.55, shade: 0.5, rim: false }), 7); }
+const GUN_ART = { ar: 'rifle', dmr: 'rifle', smg: 'smg', sg: 'smg', lmg: 'mg', at: 'launcher', aa: 'launcher', gl: 'launcher' };
+import { GUNS } from './data.js';
+function gunArtOf(u, type) { const g = u.def && u.def.gun && GUNS[u.def.gun]; if (!g) return null; if (type === 'pionier' && g.cls === 'sg') return null; return GUN_ART[g.cls] || null; }
 function legs(c, x, y, a, t, moving, col) {
   const st = moving ? Math.sin(t * 13 + x * 0.7 + y) * 3 : 0.7;
   c.save(); c.translate(x, y); c.rotate(a);
@@ -69,7 +72,7 @@ function drone(ctx, x, y, t) {
 }
 function squad(type) {
   return (ctx, u, color, t, o) => {
-    const sp = S[type], p = trooperPart(type, color), a = u.facing, ca = Math.cos(a), sa = Math.sin(a);
+    const sp = S[type], p = trooperPart(type, color, type === 'pionier' || type === 'sani' ? null : gunArtOf(u, type)), a = u.facing, ca = Math.cos(a), sa = Math.sin(a);
     const cm = camo(color), legCol = sp.plain ? '#45433a' : cm[2];
     for (const [px, py] of POS[sp.n]) {
       const x = px * ca - py * sa, y = px * sa + py * ca;

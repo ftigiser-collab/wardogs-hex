@@ -17,7 +17,7 @@ export function generateMap(seed, W = 36, H = 26) {
   // Control Zone: nahe dem Schwerpunkt der drei Hauptquartiere, leicht zufällig verschoben
   const gc = starts.reduce((a, s) => a + s.c, 0) / 3, gr = starts.reduce((a, s) => a + s.r, 0) / 3;
   const ca = rnd() * 6.283, cd = rnd() * 2.2;
-  const cz = { c: clamp(Math.round(gc + Math.cos(ca) * cd * 1.2), 7, W - 8), r: clamp(Math.round(gr + Math.sin(ca) * cd), 7, H - 8), rad: 4 };
+  const cz = { c: clamp(Math.round(gc + Math.cos(ca) * cd * 1.2), 7, W - 8), r: clamp(Math.round(gr + Math.sin(ca) * cd), 7, H - 8), rad: W >= 56 ? 6 : W >= 42 ? 5 : 4 };
 
   // Grundgelände: Hügel, Felsgrate, Wälder
   for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {

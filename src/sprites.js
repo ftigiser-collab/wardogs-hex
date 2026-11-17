@@ -3,7 +3,7 @@ import { rgba } from './util.js';
 import { MDRAW } from './mart.js';
 import { IDRAW } from './iart.js';
 import { UNITS, BUILDINGS } from './data.js';
-import { drawBuildingArt, drawConstruction } from './wart.js';
+import { drawBuildingArt2 as drawBuildingArt, drawConstruction } from './wart.js';
 
 const DRAW = Object.assign({}, MDRAW, IDRAW);
 
@@ -74,7 +74,7 @@ export function icon(kind, type, color) {
   ctx.drawImage(iconBackdrop(air), 0, 0);
   ctx.save();
   if (kind === 'unit') {
-    const sc = def.cat === 'inf' ? 3.6 : air ? (type === 'lastheli' ? 1.55 : 1.85) : (type === 'laster' || type === 'grad' || type === 'artillerie') ? 2.0 : 2.3;
+    const sc = def.cat === 'inf' ? 3.6 : air ? (type === 'lakota' || type === 'lakota_mini' || type === 'havoc' ? 1.55 : 1.85) : (type.startsWith('ural') || type === 'sph2' || type === 't72' || type === 'l2a6' || type === 'gepard') ? 2.0 : 2.3;
     ctx.translate(W / 2, H * 0.55 + (air ? 18 : 0)); ctx.scale(sc, sc);
     const fake = { type, def: { ...def }, facing: -0.55, id: 3, ammo: def.ammo || 0, hp: 100, passengers: [], cargoP: [], antenna: true };
     drawUnit(ctx, fake, 0, 0, color, 0.3, { z: air ? 14 : 0, turret: 0.15 });

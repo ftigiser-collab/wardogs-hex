@@ -4,7 +4,7 @@ import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { Controller } from './ui.js';
 import { FX } from './fx.js';
-import { DIFFICULTY, FACTIONS, FAC_KEYS, TARGETS, START_CASH, CASH_FLOOR, UNITS } from './data.js';
+import { DIFFICULTY, FACTIONS, FAC_KEYS, TARGETS, START_CASH, CASH_FLOOR, UNITS, TRACKS, TRACK_KEYS, levelOf, xpForLevel, catalog, AI_LEVEL, GUNS, GEAR, VESTS } from './data.js';
 import { center } from './hex.js';
 import { startMenuBg } from './menubg.js';
 import { crestImg } from './crest.js';
@@ -15,20 +15,23 @@ try { menuBg = startMenuBg(document.getElementById('menu')); } catch (e) { conso
 
 const $ = (s) => document.querySelector(s);
 const money = (v) => '$' + Math.floor(v).toLocaleString('de-DE');
-const MAPS = { klein: [30, 22], mittel: [36, 26], gross: [42, 30] };
+const MAPS = { klein: [36, 26], mittel: [42, 30], gross: [50, 36], riesig: [60, 42] };
 
 // ---------- Konto: Geld und Bilanz über alle Einsätze ----------
 const KONTO = 'hundemarke-konto';
-function readKonto() { try { return { bank: START_CASH, games: 0, wins: 0, best: 0, ...JSON.parse(localStorage.getItem(KONTO) || '{}') }; } catch { return { bank: START_CASH, games: 0, wins: 0, best: 0 }; } }
+const freshKonto = () => ({ bank: START_CASH, games: 0, wins: 0, best: 0, xp: Object.fromEntries(TRACK_KEYS.map((k) => [k, 0])), unlocked: [] });
+function readKonto() { const f = freshKonto(); try { const k = { ...f, ...JSON.parse(localStorage.getItem(KONTO) || '{}') }; k.xp = { ...f.xp, ...(k.xp || {}) }; k.unlocked = k.unlocked || []; return k; } catch { return f; } }
+const levelsOf = (k) => Object.fromEntries(TRACK_KEYS.map((t) => [t, levelOf(k.xp[t] || 0)]));
+const wardogLevel = (k) => TRACK_KEYS.reduce((s, t) => s + levelOf(k.xp[t] || 0), 0);
 function writeKonto(k) { try { localStorage.setItem(KONTO, JSON.stringify(k)); } catch {} }
 function showKonto() {
   const k = readKonto();
-  $('#mkonto').innerHTML = `<span>Konto <b>${money(k.bank)}</b></span><span>${k.games} ${k.games === 1 ? 'Einsatz' : 'Einsätze'} · ${k.wins} ${k.wins === 1 ? 'Sieg' : 'Siege'}</span><button id="kreset" title="Konto auf $10.000 zurücksetzen">↺</button>`;
-  $('#kreset').onclick = () => { if (confirm('Konto wirklich auf $10.000 zurücksetzen?')) { writeKonto({ bank: START_CASH, games: 0, wins: 0, best: 0 }); showKonto(); } };
+  $('#mkonto').innerHTML = `<span>Konto <b>${money(k.bank)}</b></span><span>Wardog-Stufe <b>${wardogLevel(k)}</b> · ${k.games} ${k.games === 1 ? 'Einsatz' : 'Einsätze'} · ${k.wins} ${k.wins === 1 ? 'Sieg' : 'Siege'}</span><button id="kreset" title="Konto, Stufen und Freischaltungen zurücksetzen">↺</button>`;
+  $('#kreset').onclick = () => { if (confirm('Konto, Stufen und Freischaltungen wirklich zurücksetzen?')) { writeKonto(freshKonto()); showKonto(); } };
 }
 showKonto();
 
-let opts = { faction: 'ironstar', map: 'mittel', target: 'normal', diff: 'normal', cash: 'konto', seed: '' };
+let opts = { faction: 'ironstar', map: 'gross', target: 'normal', diff: 'normal', cash: 'konto', seed: '' };
 try { opts = { ...opts, ...JSON.parse(localStorage.getItem('hundemarke-opts') || '{}') }; } catch {}
 if (!FACTIONS[opts.faction]) opts.faction = 'ironstar';
 $('#mcrests').innerHTML = FAC_KEYS.map((f) => crestImg(f, 50)).join('');
@@ -41,13 +44,14 @@ function seg(id, values, labels) {
 }
 function showSkirmish() {
   const el = $('#skirmish'), k = readKonto();
-  const fac = (f) => { const F = FACTIONS[f], sp = UNITS[F.special]; return `<button data-fac="${f}" class="${opts.faction === f ? 'on' : ''}" style="--c:${F.color}">${crestImg(f, 44)}<b>${F.name}</b><span>${F.desc}<br>${F.perkText} · ${sp.name}</span></button>`; };
+  const fac = (f) => { const F = FACTIONS[f]; return `<button data-fac="${f}" class="${opts.faction === f ? 'on' : ''}" style="--c:${F.color}">${crestImg(f, 44)}<b>${F.name}</b><span>${F.desc}<br>${F.perkText}</span></button>`; };
   el.innerHTML = `<div class="box"><button class="close">×</button><h2>Einsatz planen</h2>
     <div class="m-label">Eure Fraktion — die beiden anderen sind eure Gegner</div>
     <div class="facgrid three">${FAC_KEYS.map(fac).join('')}</div>
     <div class="m-label">Punkteziel</div>${seg('target', ['kurz', 'normal', 'lang'], ['Kurz · 12', 'Normal · 20', 'Lang · 30'])}
-    <div class="m-label">Einsatzgebiet</div>${seg('map', ['klein', 'mittel', 'gross'], ['Klein', 'Mittel', 'Groß'])}
+    <div class="m-label">Einsatzgebiet</div>${seg('map', ['klein', 'mittel', 'gross', 'riesig'], ['Klein', 'Mittel', 'Groß', 'Riesig'])}
     <div class="m-label">Schwierigkeit</div>${seg('diff', ['leicht', 'normal', 'schwer'], ['Leicht', 'Normal', 'Schwer'])}
+    <div class="m-hint">Gegner-Ausrüstung: Leicht bis Stufe ${AI_LEVEL.leicht}, Normal bis ${AI_LEVEL.normal}, Schwer bis ${AI_LEVEL.schwer} je Spur.</div>
     <div class="m-label">Kasse</div>${seg('cash', ['konto', 'fest'], [`Konto · ${money(Math.max(CASH_FLOOR, k.bank))}`, `Fest · ${money(START_CASH)}`])}
     <div class="m-hint">Mit „Konto“ zählt jeder Dollar: Was am Ende übrig ist, nehmt ihr mit — plus Prämie.</div>
     <div class="m-label">Karte (optional)</div><input id="seed" placeholder="Zufällig — oder Zahl/Wort eingeben" autocomplete="off" value="${opts.seed || ''}">
@@ -65,6 +69,36 @@ function showSkirmish() {
     el.classList.remove('show'); start();
   };
 }
+// ---------- Waffenkammer: Stufen je Spur, Freischaltung gegen Gebühr ----------
+const KIND = { gun: 'Waffe', gear: 'Ausrüstung', vest: 'Weste', unit: 'Fahrzeug' };
+let wkTrack = 'assault';
+function showArmory() {
+  const el = $('#armory'), k = readKonto(), lv = levelsOf(k), cat = catalog();
+  lv.wardog = wardogLevel(k);
+  const tabs = [...TRACK_KEYS, 'wardog'].map((t) => { if (t === 'wardog') return `<button data-t="wardog" class="${wkTrack === 'wardog' ? 'on' : ''}"><i>🐕</i><b>Wardog</b><span>Stufe ${lv.wardog}</span><em><u style="width:0"></u></em></button>`; const L = lv[t], x = k.xp[t] || 0, a = xpForLevel(L), b = xpForLevel(L + 1); return `<button data-t="${t}" class="${t === wkTrack ? 'on' : ''}"><i>${TRACKS[t].icon}</i><b>${TRACKS[t].name}</b><span>Stufe ${L}</span><em><u style="width:${Math.round((x - a) / (b - a) * 100)}%"></u></em></button>`; }).join('');
+  const items = cat.filter((it) => it.track === wkTrack).sort((a, b) => a.lvl - b.lvl);
+  const row = (it) => {
+    const own = !it.lvl || k.unlocked.includes(it.id), reach = lv[wkTrack] >= it.lvl;
+    const st = own ? '<span class="ok">✓ verfügbar</span>' : !reach ? `<span class="lock">🔒 Stufe ${it.lvl}</span>` : `<button data-u="${it.id}" ${k.bank < it.fee ? 'disabled' : ''} class="primary">Freischalten ${money(it.fee)}</button>`;
+    return `<div class="wk-it ${own ? 'own' : reach ? 'reach' : 'far'}"><div><b>${it.name}</b><span>${KIND[it.kind]} · Stufe ${it.lvl} · im Einsatz ${money(it.price)}</span></div>${st}</div>`;
+  };
+  el.innerHTML = `<div class="box wide"><button class="close">×</button><h2>Waffenkammer</h2>
+    <div class="wk-head"><span>Wardog-Stufe <b>${wardogLevel(k)}</b></span><span>Konto <b>${money(k.bank)}</b></span></div>
+    <div class="m-hint">XP sammelt ihr im Einsatz mit euren Trupps: Sturm (Kämpfen, Hacken, Zone halten), Sanität (Heilen, Wiederbeleben), Aufklärung (Markieren, Späher-Abschüsse), Unterstützung (Bauen, Reparieren, Artillerie), Fahrer und Pilot (Fahrzeuge, Lieferungen). Ab der nötigen Stufe könnt ihr Teile einmalig gegen Gebühr vom Konto freischalten.</div>
+    <div class="wk-tabs">${tabs}</div><div class="wk-list">${items.map(row).join('')}</div>
+    <div class="m-hint">Westen hängen an der Wardog-Stufe (Summe aller Spuren).</div>
+    <div class="m-hint">Legende: XP = Erfahrungspunkte · AR = Sturmgewehr · SMG = Maschinenpistole · DMR = Präzisionsgewehr · LMG = leichtes MG · AT = Panzerabwehr · AA = Flugabwehr</div></div>`;
+  el.classList.add('show');
+  el.querySelector('.close').onclick = () => { el.classList.remove('show'); showKonto(); };
+  el.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => { wkTrack = b.dataset.t; showArmory(); });
+  el.querySelectorAll('[data-u]').forEach((b) => b.onclick = () => {
+    const it = cat.find((x) => x.id === b.dataset.u), kk = readKonto();
+    if (!it || kk.bank < it.fee) return;
+    kk.bank -= it.fee; kk.unlocked.push(it.id); writeKonto(kk); showArmory();
+  });
+}
+$('#armorybtn').onclick = () => showArmory();
+
 function crests(m) { return m.factions.map((f) => crestImg(f, 22)).join(''); }
 function showSaves() {
   const el = $('#saves');
@@ -100,7 +134,7 @@ async function start(save) {
     const factions = [opts.faction, ...FAC_KEYS.filter((f) => f !== opts.faction).sort(() => Math.random() - 0.5)];
     const k = readKonto();
     const konto = opts.cash !== 'fest';
-    game = new Game(map, { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH });
+    game = new Game(map, { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH, unlocked: k.unlocked, levels: levelsOf(k), aiLevel: AI_LEVEL[opts.diff] ?? 18 });
     game.diffName = opts.diff; game.settings = { ...opts }; game.konto = konto;
     game.setup();
   }
@@ -108,11 +142,20 @@ async function start(save) {
   const renderer = new Renderer($('#game'), game, fx);
   const ctrl = new Controller(game, renderer, fx);
   ctrl.onEnd = (state) => {
-    if (!game.konto) return null;
-    const k = readKonto(), before = k.bank, bonus = state === 'won' ? 5000 : 1000;
-    k.bank = Math.round(game.players[0].credits + bonus); k.games++; if (state === 'won') k.wins++; k.best = Math.max(k.best || 0, k.bank);
+    const k = readKonto(), lv0 = levelsOf(k), wl0 = wardogLevel(k);
+    // XP zählen immer, auch mit fester Kasse
+    const gain = TRACK_KEYS.map((t) => [t, Math.round((game.xp[t] || 0) * (state === 'won' ? 1.25 : 1))]).filter(([, n]) => n > 0);
+    for (const [t, n] of gain) k.xp[t] = (k.xp[t] || 0) + n;
+    const lv1 = levelsOf(k);
+    const xpLine = gain.length ? gain.map(([t, n]) => `${TRACKS[t].icon} ${TRACKS[t].name} +${n} XP${lv1[t] > lv0[t] ? ` → Stufe ${lv1[t]}!` : ''}`).join(' · ') : 'Keine XP gesammelt';
+    let line = xpLine + (state === 'won' ? ' (Sieg: XP ×1,25)' : '') + `<br>Wardog-Stufe ${wl0} → ${wardogLevel(k)}`;
+    if (game.konto) {
+      const before = k.bank, bonus = state === 'won' ? 5000 : 1000;
+      k.bank = Math.round(game.players[0].credits + bonus); k.games++; if (state === 'won') k.wins++; k.best = Math.max(k.best || 0, k.bank);
+      line = `Konto: ${money(before)} → ${money(k.bank)} (inkl. ${money(bonus)} ${state === 'won' ? 'Siegprämie' : 'Einsatzprämie'})<br>` + line;
+    }
     writeKonto(k);
-    return `Konto: ${money(before)} → ${money(k.bank)} (inkl. ${money(bonus)} ${state === 'won' ? 'Siegprämie' : 'Einsatzprämie'})`;
+    return line + '<br>Neue Teile freischalten: Hauptmenü → Waffenkammer';
   };
   window.__game = { game, renderer, ctrl };
   const home = center(map.starts[0].c, map.starts[0].r), cz = center(game.cz.c, game.cz.r);

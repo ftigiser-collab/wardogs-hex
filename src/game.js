@@ -1,6 +1,6 @@
 // Spielregeln und Zustand — Hundemarke (rundenbasiert, drei Fraktionen, King of the Hill)
 import { UNITS, BUILDINGS, WEAPONS, ARMOR_MOD, AMMO, TERRAIN, MOVE_COST, FACTIONS, RANKS, PAY, PALLETS, FOB_STOCK, CODE_USES, CODE_LOCK, TOWER_CD,
-  SPZ_RESPAWN, SPZ_DEPLOYS, DOWNED_TURNS, START_CASH } from './data.js';
+  SPZ_RESPAWN, SPZ_DEPLOYS, DOWNED_TURNS, START_CASH, GUNS, GEAR, VESTS, infDef, loadoutCost, templateLoadout, TRACK_KEYS, levelOf } from './data.js';
 import { neighbors, distance, ring, center } from './hex.js';
 import { mulberry32 } from './util.js';
 
@@ -31,13 +31,31 @@ export class Game {
     // Zonen
     const cz = map.cz;
     this.cz = { c: cz.c, r: cz.r, rad: cz.rad };
-    this.hz = { c: cz.c, r: cz.r, rad: 1, dir: Math.floor(this.rnd() * 6), lock: 0, lockTower: -1 };
+    this.hz = { c: cz.c, r: cz.r, rad: cz.rad >= 6 ? 2 : 1, dir: Math.floor(this.rnd() * 6), lock: 0, lockTower: -1 };
     this.hz.next = this.hzStep();
     // Funktürme mit je einer Codeziffer (Code bleibt die ganze Partie gleich)
     this.towers = (map.towers || []).map((t, i) => ({ i, c: t.c, r: t.r, digit: Math.floor(this.rnd() * 10), owner: -1, cd: 0 }));
     this.known = this.players.map(() => new Set());
     this.codeUses = 0;
+    this.mines = []; this.smoke = [];
+    this.xp = Object.fromEntries(TRACK_KEYS.map((k) => [k, 0]));
+    // Freischaltungen: Spieler aus dem Konto, KI nach Schwierigkeit
+    const unl = opts.unlocked || [];
+    for (const p of this.players) { p.unlocked = p.id === 0 ? [...unl] : []; p.aiLevel = p.id === 0 ? null : (opts.aiLevel ?? 18); p.levels = p.id === 0 ? (opts.levels || {}) : null; }
   }
+  // Darf diese Fraktion das Teil benutzen?
+  itemOf(id) { return GUNS[id] || GEAR[id] || VESTS[id] || UNITS[id] || null; }
+  canUse(o, id) {
+    const it = this.itemOf(id); if (!it) return false;
+    const lvl = it.lvl || 0, p = this.players[o];
+    if (!lvl) return true;
+    if (p.aiLevel != null) return lvl <= p.aiLevel;
+    return p.unlocked.includes(id);
+  }
+  loadoutOk(o, lo) { return !!lo && (lo.free || (GUNS[lo.gun] && this.canUse(o, lo.gun) && (lo.gear || []).length <= 2 && (lo.gear || []).every((k) => GEAR[k] && this.canUse(o, k)) && this.canUse(o, lo.vest || 'keine'))); }
+  defaultLoadout(o, role) { if (role === 'rekrut') return { free: true, gun: 'kh2002', gear: ['verband'] }; return templateLoadout(role, (id) => this.canUse(o, id)); }
+  addXp(o, track, n) { if (o !== 0 || !track || !(n > 0)) return; this.xp[track] = (this.xp[track] || 0) + Math.round(n); }
+  trackOf(e) { if (e.isBuilding) return 'support'; return e.def.mt === 'air' ? 'pilot' : e.def.cat === 'veh' ? (e.def.weapon === 'artillery' ? 'support' : 'driver') : e.def.track; }
   mkPlayer(id, faction) {
     const F = FACTIONS[faction];
     return { id, faction, name: F.name, color: F.color, perk: F.perk || {}, credits: START_CASH, incomeMult: 1, score: 0,
@@ -49,16 +67,17 @@ export class Game {
   orderFor(round = this.round) { const n = this.players.length, k = (round - 1) % n; return [...Array(n).keys()].map((i) => (i + k) % n); }
 
   // ---------- Fraktionsboni ----------
-  unitCost(owner, type) {
+  unitCost(owner, type, lo) {
     const d = UNITS[type], pk = this.players[owner].perk;
+    if (d.cat === 'inf') return loadoutCost(lo || this.defaultLoadout(owner, type));
     let c = d.cost;
     if (d.mt === 'air' && pk.airCost) c *= pk.airCost;
-    if ((d.armored || type === 'grad') && pk.armorCost) c *= pk.armorCost;
+    if (d.mt === 'track' && pk.armorCost) c *= pk.armorCost;
     return Math.round(c / 50) * 50;
   }
   moveOf(u) {
     const pk = this.players[u.owner].perk;
-    let m = u.def.move + (RANKS[u.rank || 0].move || 0) + (u.def.mt === 'foot' && pk.infMove ? pk.infMove : 0);
+    let m = u.def.move + (RANKS[u.rank || 0].move || 0) + (u.def.mt === 'foot' && pk.infMove ? pk.infMove : 0) + (u.fuelBoost || 0);
     if (u.suppressed > 0) m -= 1;
     return Math.max(1, m);
   }
@@ -71,7 +90,7 @@ export class Game {
       this.addBuilding(o, 'hq', s.c, s.r, true);
       const free = this.safeHexes(o).filter(([c, r]) => this.groundFree(c, r) && this.cost('foot', c, r) < Infinity);
       free.sort((a, b) => distance(a[0], a[1], this.cz.c, this.cz.r) - distance(b[0], b[1], this.cz.c, this.cz.r));
-      ['schuetze', 'schuetze', 'pionier', 'jeep'].forEach((t, i) => { const h = free[i]; if (h) this.addUnit(o, t, h[0], h[1]); });
+      ['schuetze', 'schuetze', 'pionier', 'kodiak'].forEach((t, i) => { const h = free[i]; if (!h) return; const lo = UNITS[t].cat === 'inf' ? templateLoadout(t, (id) => !this.itemOf(id)?.lvl) : null; if (lo && t === 'pionier') lo.gear = ['hammer_s', 'verband']; this.addUnit(o, t, h[0], h[1], lo); });
     });
     this.updateVision();
   }
@@ -87,8 +106,19 @@ export class Game {
   cost(mt, c, r) { return MOVE_COST[mt][this.terr(c, r)]; }
   unitAt(c, r, air) { return this.units.find((u) => !u.dead && !u.carried && u.c === c && u.r === r && (u.def.mt === 'air') === !!air) || null; }
   buildingAt(c, r) { return this.buildings.find((b) => !b.dead && b.c === c && b.r === r) || null; }
-  solidAt(c, r) { const b = this.buildingAt(c, r); return b && !b.def.passable ? b : null; }
-  groundFree(c, r) { return !this.unitAt(c, r, false) && !this.solidAt(c, r); }
+  // Durchlässigkeit von Bauten: pass all | foot | own | ownInf, sonst Sperre
+  passes(b, u) {
+    const p = b.def.pass; if (!p) return false;
+    if (p === 'all') return true;
+    if (!u) return false;
+    const inf = u.def.mt === 'foot', own = b.owner === u.owner && b.turnsLeft <= 0;
+    if (p === 'foot') return inf;
+    if (p === 'own') return own;
+    if (p === 'ownInf') return own && inf;
+    return false;
+  }
+  solidAt(c, r, u) { const b = this.buildingAt(c, r); return b && !this.passes(b, u) ? b : null; }
+  groundFree(c, r, u) { return !this.unitAt(c, r, false) && !this.solidAt(c, r, u || { def: { mt: 'foot' }, owner: -2 }); }
   ownUnits(o) { return this.units.filter((u) => !u.dead && u.owner === o); }
   hqOf(o) { return this.buildings.find((b) => !b.dead && b.owner === o && b.type === 'hq') || null; }
   // Sichere Zone um das HQ
@@ -98,10 +128,12 @@ export class Game {
   towerAt(c, r) { return this.towers.find((t) => t.c === c && t.r === r) || null; }
   poiAt(c, r) { return this.towerAt(c, r); }
 
-  addUnit(owner, type, c, r) {
-    const def = UNITS[type];
+  addUnit(owner, type, c, r, lo) {
+    let def = UNITS[type];
+    if (def.cat === 'inf') { lo = lo || this.defaultLoadout(owner, type); def = infDef(lo); type = def.role; }
     const u = { id: NEXT++, isUnit: true, owner, type, def, c, r, hp: 100, moved: false, acted: false, ammo: def.ammo || 0, carried: false,
       facing: ang(c, r, this.cz.c, this.cz.r), ammoType: 'fmj', passengers: def.transport ? [] : undefined, cargoP: def.pallets ? [] : undefined };
+    if (lo) { u.lo = lo; u.gearUses = { ...(def.gearUses || {}) }; if (def.builder) u.supplies = 20; }
     if (def.spawnPoint) u.antenna = true;
     if (def.flares) u.flareReady = true;
     this.units.push(u); this.byId.set(u.id, u);
@@ -129,10 +161,12 @@ export class Game {
   // ---------- Tarnung ----------
   stealthed(u, viewer = 0) {
     if (!u || !u.isUnit || u.owner === viewer || u.downed) return false;
-    const st = u.def.stealth;
-    const facStealth = u.def.cat === 'inf' && this.players[u.owner].perk.infStealth && TERRAIN[this.terr(u.c, u.r)].cover && !u.attacked;
+    const st = u.def.stealth, inf = u.def.cat === 'inf';
+    const b = this.buildingAt(u.c, u.r);
+    const tent = inf && b && b.def.tent && b.owner === u.owner && b.turnsLeft <= 0 && !u.attacked;
+    const facStealth = inf && ((this.players[u.owner].perk.infStealth && TERRAIN[this.terr(u.c, u.r)].cover) || u.def.ghillie || tent) && (!u.attacked || u.def.silent);
     if (!st && !facStealth) return false;
-    if (st === 'still' && (u.moved || u.attacked) && !facStealth) return false;
+    if (st === 'still' && (u.moved || (u.attacked && !u.def.silent)) && !facStealth) return false;
     return !this.units.some((p) => !p.dead && p.owner === viewer && !p.carried && distance(p.c, p.r, u.c, u.r) <= 1);
   }
 
@@ -140,7 +174,7 @@ export class Game {
   blocked(u, c, r) {
     const air = u.def.mt === 'air';
     const so = this.safeOwner(c, r); if (so >= 0 && so !== u.owner) return true;
-    if (!air) { const b = this.solidAt(c, r); if (b) return true; }
+    if (!air) { const b = this.solidAt(c, r, u); if (b) return true; }
     const o = this.unitAt(c, r, air);
     if (o && o.owner !== u.owner && !this.stealthed(o, u.owner) && (u.owner !== 0 || this.visible[this.i(c, r)])) return true;
     return false;
@@ -155,8 +189,9 @@ export class Game {
       const [c, r, g] = open.shift();
       if (g > (res.get(key(c, r))?.cost ?? Infinity)) continue;
       for (const [nc, nr] of neighbors(c, r, this.W, this.H)) {
-        const k = key(nc, nr), step = this.cost(u.def.mt, nc, nr);
+        const k = key(nc, nr); let step = this.cost(u.def.mt, nc, nr);
         if (step === Infinity || this.blocked(u, nc, nr)) continue;
+        if (u.def.mt === 'foot') { const wb = this.buildingAt(nc, nr); if (wb && wb.def.wire && wb.owner !== u.owner) step += 2; }
         const ng = g + step; if (ng > budget + 1e-6) continue;
         const cur = res.get(k);
         if (!cur || ng < cur.cost) { res.set(k, { c: nc, r: nr, cost: ng, prev: key(c, r) }); open.push([nc, nr, ng]); }
@@ -185,7 +220,7 @@ export class Game {
         let step = this.cost(u.def.mt, nc, nr);
         if (step === Infinity) continue;
         const so = this.safeOwner(nc, nr); if (so >= 0 && so !== u.owner) continue;
-        if (u.def.mt !== 'air' && this.solidAt(nc, nr)) continue;
+        if (u.def.mt !== 'air' && this.solidAt(nc, nr, u)) continue;
         const o = this.unitAt(nc, nr, u.def.mt === 'air'); if (o && o.owner !== u.owner) step += 6;
         if (avoid) step += avoid(nc, nr);
         const ng = g + step, k = this.i(nc, nr);
@@ -207,11 +242,24 @@ export class Game {
     const air = u.def.mt === 'air';
     for (let k = 1; k < path.length; k++) { const o = this.unitAt(path[k].c, path[k].r, air); if (o && o.owner !== u.owner) { path = path.slice(0, k); u.ambushed = o.id; break; } }
     while (path.length > 1) { const e = path[path.length - 1]; const occ = this.unitAt(e.c, e.r, air); if (!occ || occ === u) break; path.pop(); }
+    // Minen: versteckt, lösen beim Betreten aus
+    u.mineEv = null;
+    if (!air) for (let k = 1; k < path.length; k++) {
+      const m = this.mines.find((x) => x.c === path[k].c && x.r === path[k].r && x.owner !== u.owner && (x.kind === 'inf' ? u.def.cat === 'inf' : u.def.cat === 'veh'));
+      if (m) { path = path.slice(0, k + 1); u.mineEv = { mine: m }; break; }
+    }
     c = path[path.length - 1].c; r = path[path.length - 1].r;
     if (u.ambushed) { u.acted = true; this.say(`Hinterhalt! ${u.def.name} stößt auf einen verborgenen Gegner`, 'warn', u.owner); }
     if (path.length > 1) { const a = path[path.length - 2]; u.facing = ang(a.c, a.r, c, r); }
     u.c = c; u.r = r; u.moved = true; u.waitUntil = 0;
     if (u.passengers) this.syncPassengers(u);
+    if (u.mineEv) {
+      const m = u.mineEv.mine; this.mines = this.mines.filter((x) => x !== m);
+      const ev = { type: 'mine', u: u.id, c, r, kind: m.kind, cash: [] }; u.acted = true;
+      const res = this.applyHit(u, m.kind === 'inf' ? 70 : 90 * (u.def.tough || 1), { owner: m.owner }, ev, ev.cash);
+      ev.res = res; u.mineEv = ev;
+      this.say(u.owner === 0 ? `Mine! ${u.def.name} getroffen` : `Eine eurer Minen hat einen Feind erwischt`, u.owner === 0 ? 'bad' : 'good', 0);
+    }
     return path;
   }
 
@@ -242,6 +290,7 @@ export class Game {
       const base = this.inHZ(c, r) ? PAY.transportHz : PAY.transport;
       this.pay(apc.owner, base * (this.players[apc.owner].perk.transportPay || 1), 'Transport', c, r, ev.cash);
       apc.ferried = (apc.ferried || 0) + 1;
+      this.addXp(apc.owner, apc.def.mt === 'air' ? 'pilot' : 'driver', 40);
     }
     t.rideFromCz = true;
     return ev;
@@ -269,7 +318,7 @@ export class Game {
     if (w.noMoveFire && u.moved) return false;
     if (w.ammo && u.ammo <= 0) return false;
     if (u.isUnit && this.inSafe(u.c, u.r, u.owner)) return false;
-    if (u.isBuilding) { if (u.turnsLeft > 0) return false; if (w.cost) { const f = this.fobOfB(u); if (!f || f.stock.bau < w.cost) return false; } }
+    if (u.isBuilding) { if (u.turnsLeft > 0) return false; const f = this.fobOfB(u); if (w.cost && (!f || f.stock.bau < w.cost)) return false; if (w.mech && (!f || f.stock.mech < w.mech)) return false; }
     return true;
   }
   targetable(t, byOwner) {
@@ -278,13 +327,22 @@ export class Game {
     if (t.isUnit && (t.carried || this.inSafe(t.c, t.r, t.owner))) return false;
     return true;
   }
+  // Reichweite mit Turm-Bonus (Scharfschützen auf eigenem Aufklärungsturm +1)
+  effWeapon(e, c, r) {
+    const w = this.weapon(e); if (!w || !e.isUnit || e.def.cat !== 'inf') return w;
+    const b = this.buildingAt(c, r);
+    if (b && b.def.tower && b.owner === e.owner && b.turnsLeft <= 0 && (w.type === 'sniper' || w.type === 'amr' || w.type === 'rifle')) return { ...w, range: [w.range[0], w.range[1] + 1] };
+    return w;
+  }
+  inSmoke(c, r) { return this.smoke.some((s) => distance(s.c, s.r, c, r) <= 1); }
   targetsFrom(e, c, r, onlyVisible = e.owner === 0) {
-    const w = this.weapon(e); if (!w) return [];
+    const w = this.effWeapon(e, c, r); if (!w) return [];
     const out = [];
     for (const t of this.units) {
       if (!this.targetable(t, e.owner) || !this.canHit(w, t)) continue;
       if (onlyVisible && !this.visible[this.i(t.c, t.r)]) continue;
       if (this.stealthed(t, e.owner)) continue;
+      if (this.inSmoke(t.c, t.r) && distance(c, r, t.c, t.r) > 1 && !w.splash) continue;
       if (this.inRange(w, c, r, t.c, t.r)) out.push(t);
     }
     if (w.ground) for (const b of this.buildings) {
@@ -297,8 +355,8 @@ export class Game {
   coverAt(t) {
     if (t.isBuilding || this.isAir(t)) return 0;
     let d = TERRAIN[this.terr(t.c, t.r)].def;
-    const b = this.buildingAt(t.c, t.r); if (b && b.def.passable && b.owner === t.owner && b.turnsLeft <= 0) d += b.def.cover || 0;
-    return Math.min(0.6, d);
+    const b = this.buildingAt(t.c, t.r); if (b && b.def.pass && b.owner === t.owner && b.turnsLeft <= 0) d += b.def.cover || 0;
+    return Math.min(0.7, d);
   }
   calcDamage(att, t, attHp = att.hp, ammoType = att.ammoType) {
     const w = this.weapon(att); if (!w || !this.canHit(w, t)) return 0;
@@ -312,6 +370,9 @@ export class Game {
     if (t.isUnit && t.def.cat === 'veh' && this.players[t.owner].perk.vehTough) dmg *= this.players[t.owner].perk.vehTough;
     if (att.isUnit && att.rank) dmg *= RANKS[att.rank].dmg;
     if (t.isUnit && t.rank) dmg *= RANKS[t.rank].taken;
+    if (t.isUnit && t.marked && t.marked.owner !== t.owner && att.owner === t.marked.owner) dmg *= 1.2;
+    if (att.isUnit && att.def.cat === 'inf' && this.buildings.some((b) => !b.dead && b.type === 'lautsprecher' && b.owner === att.owner && b.turnsLeft <= 0 && distance(b.c, b.r, att.c, att.r) <= 1)) dmg *= 1.1;
+    if (t.isUnit && (w.splash || w.type === 'artillery' || w.type === 'mortar')) { const sb = this.buildingAt(t.c, t.r); if (sb && sb.def.shelter && sb.owner === t.owner && sb.turnsLeft <= 0) dmg = 0; }
     if (t.isBuilding) dmg = dmg * t.maxHp / 100;
     return dmg;
   }
@@ -330,7 +391,7 @@ export class Game {
   }
   canCounter(t, att, ac = att.c, ar = att.r) {
     if (t.isUnit && (t.downed || t.carried)) return false;
-    const w = this.weapon(t); if (!w || w.noCounter || !this.canHit(w, att)) return false;
+    const w = this.effWeapon(t, t.c, t.r); if (!w || w.noCounter || !this.canHit(w, att)) return false;
     if (t.isBuilding && t.turnsLeft > 0) return false;
     if (w.ammo && t.ammo <= 0) return false;
     return this.inRange(w, t.c, t.r, ac, ar);
@@ -359,8 +420,9 @@ export class Game {
     let dmg = this.calcDamage(att, t) * rnd;
     att.acted = true; att.moved = true; att.attacked = true;
     if (w.ammo && att.isUnit) att.ammo--;
-    if (w.cost && att.isBuilding) { const f = this.fobOfB(att); if (f) f.stock.bau -= w.cost; }
+    if (att.isBuilding) { const f = this.fobOfB(att); if (f && w.cost) f.stock.bau -= w.cost; if (f && w.mech) f.stock.mech -= w.mech; }
     att.facing = ang(att.c, att.r, t.c, t.r);
+    const wasMarked = t.isUnit && t.marked && t.marked.owner === att.owner;
     const ev = { type: 'attack', att: att.id, target: t.id, dmg: 0, proj: w.proj, counter: 0, killed: false, counterKilled: false, cash: [] };
     if (w.flareable && t.isUnit && t.flareReady) { t.flareReady = false; ev.flared = true; dmg = 0; }
     if (w.miss && this.rnd() < w.miss) { ev.miss = true; dmg = 0; }
@@ -397,6 +459,9 @@ export class Game {
       ev.counter = this.pct(cdd, att);
       if (cdd > 0) { const res = this.applyHit(att, cdd, t, ev, ev.cash); if (res === 'killed') ev.counterKilled = true; if (res === 'downed') ev.counterDowned = true; }
     }
+    this.addXp(att.owner, this.trackOf(att), ev.dmg * 0.6 + (ev.killed || ev.downed ? 50 : 0));
+    if (wasMarked && (ev.killed || ev.downed)) this.addXp(att.owner, 'recon', 40);
+    if (t.isUnit && ev.counter) this.addXp(t.owner, this.trackOf(t), ev.counter * 0.4);
     if (!att.dead && !att.downed) this.gainXp(att, this.xpFor(ev.dmg, t, ev.killed || ev.downed), ev);
     if (t.isUnit && !t.dead && !t.downed && ev.counter) this.gainXp(t, this.xpFor(ev.counter, att, ev.counterKilled) + 4, ev);
     if (t.isUnit && !t.dead && !t.downed && !ev.counter) this.gainXp(t, 3, ev);
@@ -543,6 +608,7 @@ export class Game {
     u.acted = true; u.moved = true;
     const ev = { type: 'hack', u: u.id, tower: t.i, digit: t.digit, from, cash: [] };
     this.pay(u.owner, 300 * this.hzMult(u.c, u.r), 'Konsole gehackt', u.c, u.r, ev.cash);
+    this.addXp(u.owner, 'assault', 40);
     if (u.owner === 0) this.say(`Konsole gehackt: Ziffer ${t.digit} an Turm ${'ABCD'[t.i]}${this.codeKnown(0) ? ' — der Code ist vollständig!' : ''}`, 'good');
     else if (from === 0) this.say(`${this.players[u.owner].name} hat euren Turm ${'ABCD'[t.i]} übernommen`, 'bad');
     return ev;
@@ -560,6 +626,7 @@ export class Game {
     u.acted = true; u.moved = true;
     const ev = { type: 'code', u: u.id, tower: t.i, from, to: { c: t.c, r: t.r }, owner: u.owner, cash: [] };
     this.pay(u.owner, 500, 'Code eingegeben', u.c, u.r, ev.cash);
+    this.addXp(u.owner, 'assault', 80);
     this.say(u.owner === 0 ? `Code eingegeben! Die Hot Zone springt zu Turm ${'ABCD'[t.i]} und bleibt ${CODE_LOCK} Runden` : `${this.players[u.owner].name} hat den Turmcode eingegeben — die Hot Zone springt zu Turm ${'ABCD'[t.i]}!`, u.owner === 0 ? 'good' : 'warn', 0);
     return ev;
   }
@@ -585,46 +652,112 @@ export class Game {
     const b = this.addBuilding(u.owner, 'fob', c, r, true);
     u.acted = true; u.moved = true;
     this.say(u.owner === 0 ? 'Vorposten errichtet — Pioniere können jetzt im Umkreis von 2 Feldern bauen' : `${p.name} errichtet einen Vorposten`, u.owner === 0 ? 'good' : 'warn', 0);
+    this.addXp(u.owner, 'support', 60);
     return { type: 'fob', u: u.id, b: b.id };
   }
+  // Bauplätze: Nachbarfelder; FOB-Bauten im FOB-Bereich, Feldbauten (kleiner Hammer) überall mit Rucksack-Material
   buildHexes(u, type) {
     const def = BUILDINGS[type], out = [];
     for (const [c, r] of [[u.c, u.r], ...neighbors(u.c, u.r, this.W, this.H)]) {
-      const f = this.fobCovering(u.owner, c, r); if (!f) continue;
+      const f = this.fobCovering(u.owner, c, r);
+      if (!f && !def.field) continue;
       if (!TERRAIN[this.terr(c, r)].build || this.buildingAt(c, r) || this.towerAt(c, r) || this.safeOwner(c, r) >= 0) continue;
       const occ = this.unitAt(c, r, false);
-      if (def.passable ? (occ && occ.owner !== u.owner) : occ) continue;
+      if (occ && !(def.pass && occ.owner === u.owner && this.passes({ def, owner: u.owner, turnsLeft: 0 }, occ))) continue;
       out.push([c, r]);
     }
     return out;
   }
   buildFob(u) { return this.fobCovering(u.owner, u.c, u.r) || neighbors(u.c, u.r, this.W, this.H).map(([c, r]) => this.fobCovering(u.owner, c, r)).find(Boolean) || null; }
-  canBuild(u, type) {
-    if (!u.def.builder || !this.canAct(u)) return false;
-    const f = this.buildFob(u); if (!f) return false;
-    if (type === 'bohrturm' && this.buildings.some((b) => !b.dead && b.owner === u.owner && b.type === 'bohrturm')) return false;
-    return f.stock.bau >= BUILDINGS[type].bau && this.buildHexes(u, type).length > 0;
+  // Woher kommt das Material: FOB-Lager oder Rucksack (nur Feldbauten außerhalb eines FOB)
+  buildSource(u, type, c, r) {
+    const def = BUILDINGS[type];
+    const f = c != null ? this.fobCovering(u.owner, c, r) : this.buildFob(u);
+    if (f && f.stock.bau >= def.bau) return { fob: f };
+    if (def.field && (u.supplies || 0) >= def.bau) return { pack: true };
+    return null;
   }
+  buildBlock(u, type) {
+    const def = BUILDINGS[type];
+    if ((u.def.builder || 0) < def.tier) return `Braucht ${def.tier === 2 ? 'Mittleren' : 'Großen'} Hammer`;
+    if (type === 'bohrturm' && this.buildings.some((b) => !b.dead && b.owner === u.owner && b.type === 'bohrturm')) return 'Nur ein Bohrturm';
+    if (!def.field && !this.buildFob(u)) return 'Nur im FOB-Bereich';
+    const hx = this.buildHexes(u, type);
+    if (!hx.length) return 'Kein Bauplatz daneben';
+    if (!hx.some(([c, r]) => this.buildSource(u, type, c, r))) return 'Zu wenig Material';
+    return '';
+  }
+  canBuild(u, type) { return !!u.def.builder && this.canAct(u) && !this.buildBlock(u, type); }
   placeStructure(u, type, c, r) {
-    const def = BUILDINGS[type], f = this.fobCovering(u.owner, c, r);
-    if (!f || f.stock.bau < def.bau) return null;
-    f.stock.bau -= def.bau;
+    const def = BUILDINGS[type], src = this.buildSource(u, type, c, r);
+    if (!src) return null;
+    if (src.fob) src.fob.stock.bau -= def.bau; else u.supplies -= def.bau;
     const b = this.addBuilding(u.owner, type, c, r);
-    b.fob = f.id; b.turnsLeft = Math.max(0, def.turns - 1);
+    b.fob = src.fob ? src.fob.id : 0; b.turnsLeft = Math.max(0, def.turns - (u.def.builder >= 3 ? 2 : 1));
     u.acted = true; u.moved = true; u.facing = ang(u.c, u.r, c, r);
     const ev = { type: 'place', u: u.id, b: b.id, cash: [] };
     this.pay(u.owner, PAY.hammer * this.hzMult(c, r), 'Gehämmert', c, r, ev.cash);
-    if (b.turnsLeft <= 0) { ev.built = true; this.pay(u.owner, PAY.built, 'Gebaut', c, r, ev.cash); }
+    this.addXp(u.owner, 'support', 15);
+    if (b.turnsLeft <= 0) { ev.built = true; this.pay(u.owner, PAY.built, 'Gebaut', c, r, ev.cash); this.addXp(u.owner, 'support', 30); }
     return ev;
   }
-  hammerTargets(u) { return this.buildings.filter((b) => !b.dead && b.owner === u.owner && b.turnsLeft > 0 && distance(b.c, b.r, u.c, u.r) <= 1); }
+  hammerTargets(u) { return this.buildings.filter((b) => !b.dead && b.owner === u.owner && b.turnsLeft > 0 && distance(b.c, b.r, u.c, u.r) <= 1 && (u.def.builder || 0) >= (b.def.tier || 1)); }
   hammer(u, b) {
-    b.turnsLeft--; u.acted = true; u.moved = true; u.facing = ang(u.c, u.r, b.c, b.r);
+    b.turnsLeft = Math.max(0, b.turnsLeft - (u.def.builder >= 3 ? 2 : 1)); u.acted = true; u.moved = true; u.facing = ang(u.c, u.r, b.c, b.r);
     const ev = { type: 'hammer', u: u.id, b: b.id, cash: [] };
     this.pay(u.owner, PAY.hammer * this.hzMult(b.c, b.r), 'Gehämmert', b.c, b.r, ev.cash);
-    if (b.turnsLeft <= 0) { ev.built = true; this.pay(u.owner, PAY.built, 'Gebaut', b.c, b.r, ev.cash); if (u.owner === 0) this.say(`${b.def.name} fertig`, 'good'); }
+    this.addXp(u.owner, 'support', 15);
+    if (b.turnsLeft <= 0) { ev.built = true; this.pay(u.owner, PAY.built, 'Gebaut', b.c, b.r, ev.cash); this.addXp(u.owner, 'support', 30); if (u.owner === 0) this.say(`${b.def.name} fertig`, 'good'); }
     return ev;
   }
+  // Rucksack am FOB auffüllen
+  canRefill(u) { return u.def.builder && (u.supplies || 0) < 20 && !!this.buildFob(u) && this.buildFob(u).stock.bau >= 5; }
+  refill(u) { const f = this.buildFob(u), n = Math.min(20 - (u.supplies || 0), f.stock.bau); f.stock.bau -= n; u.supplies = (u.supplies || 0) + n; return n; }
+
+  // ---------- Ausrüstung: C4, Molotow, Rauch, Markieren, Minen ----------
+  gearLeft(u, k) { return (u.gearUses || {})[k] || 0; }
+  useGear(u, k) { u.gearUses[k]--; u.acted = true; u.moved = true; }
+  c4Targets(u) { return [...this.buildings, ...this.units].filter((t) => !t.dead && t.owner !== u.owner && !(t.isBuilding && t.def.invuln) && !(t.isUnit && (t.carried || t.def.cat === 'inf' || t.def.mt === 'air')) && distance(t.c, t.r, u.c, u.r) <= 1 && !(t.isUnit && this.inSafe(t.c, t.r, t.owner))); }
+  c4(u, t) {
+    this.useGear(u, 'c4');
+    const ev = { type: 'attack', att: u.id, target: t.id, proj: 'c4', dmg: 0, counter: 0, cash: [] };
+    // HESCO-Wall fällt nach 4 Ladungen, Block nach 2, Bremer nach 7
+    const charges = { hesco_s: 2, hesco: 4, bremer: 7, bunker: 6, schutz: 6 }[t.type];
+    let dmg = t.isBuilding ? (charges ? t.maxHp / charges + 1 : t.maxHp * 0.45) : 55 * (t.def.tough || 1) * (t.def.armor === 'heavy' ? 1.1 : 1.4);
+    ev.dmg = this.pct(dmg, t);
+    const res = this.applyHit(t, dmg, u, ev, ev.cash); if (res === 'killed') ev.killed = true;
+    this.addXp(u.owner, 'assault', 25);
+    return ev;
+  }
+  throwHexes(u) { return ring(u.c, u.r, 2, this.W, this.H).filter(([c, r]) => !(c === u.c && r === u.r)); }
+  molotow(u, c, r) {
+    this.useGear(u, 'molotow');
+    const ev = { type: 'fire', u: u.id, c, r, hits: [], cash: [] };
+    for (const t of this.units) if (!t.dead && !t.carried && t.c === c && t.r === r && t.def.cat === 'inf' && t.owner !== u.owner) { const res = this.applyHit(t, 40, u, ev, ev.cash); ev.hits.push({ id: t.id, res }); }
+    this.addXp(u.owner, 'assault', 15);
+    return ev;
+  }
+  smokeAt(u, c, r) {
+    this.useGear(u, 'rauch');
+    this.smoke.push({ c, r, owner: u.owner });
+    this.addXp(u.owner, 'medic', 10);
+    return { type: 'smoke', u: u.id, c, r };
+  }
+  markTargets(u) { const s = this.sightOf(u); return this.units.filter((t) => !t.dead && !t.carried && t.owner !== u.owner && distance(t.c, t.r, u.c, u.r) <= s && !this.stealthed(t, u.owner) && (u.owner !== 0 || this.visible[this.i(t.c, t.r)])); }
+  canMark(u) { return u.def.marker && this.canAct(u) && !u.marked_used && this.markTargets(u).length > 0; }
+  mark(u, t) {
+    t.marked = { owner: u.owner }; u.marked_used = true;
+    this.addXp(u.owner, 'recon', 20);
+    return { type: 'mark', u: u.id, t: t.id };
+  }
+  mineHexes(u) { return neighbors(u.c, u.r, this.W, this.H).filter(([c, r]) => this.groundFree(c, r) && !this.mines.some((m) => m.c === c && m.r === r) && this.cost('foot', c, r) < Infinity && this.safeOwner(c, r) < 0); }
+  placeMine(u, k, c, r) {
+    this.useGear(u, k);
+    this.mines.push({ c, r, owner: u.owner, kind: GEAR[k].mine });
+    this.addXp(u.owner, GEAR[k].track, 15);
+    return { type: 'minelaid', u: u.id, c, r };
+  }
+
   repairTargets(u) {
     const out = [];
     for (const t of this.units) if (!t.dead && !t.carried && t.owner === u.owner && (t.def.cat === 'veh' || t.def.mt === 'air') && (t.hp < 100 || t.antenna === false) && distance(t.c, t.r, u.c, u.r) <= 1) out.push(t);
@@ -635,6 +768,7 @@ export class Game {
     if (t.isUnit) { t.hp = Math.min(100, t.hp + 35); if (t.def.spawnPoint && t.hp >= 50) t.antenna = true; }
     else t.hp = Math.min(t.maxHp, t.hp + t.maxHp * 0.4);
     u.acted = true; u.moved = true; u.facing = ang(u.c, u.r, t.c, t.r);
+    this.addXp(u.owner, 'support', 20);
     return { type: 'repair', u: u.id, t: t.id };
   }
   canStartDrill(b) { const f = this.fobOfB(b); return b && b.type === 'bohrturm' && b.turnsLeft <= 0 && !b.drillOn && b.owner === this.current && f && f.stock.sprit >= 6; }
@@ -652,7 +786,7 @@ export class Game {
       b.owner = u.owner; b.hack = null;
       for (const s of this.buildings) if (!s.dead && s.fob === b.id) { s.owner = u.owner; flipped.push(s); }
       const ev = { type: 'fobhack', u: u.id, b: b.id, from, done: true, flipped: flipped.map((x) => x.id), cash: [] };
-      this.pay(u.owner, PAY.hackFob, 'Vorposten übernommen', b.c, b.r, ev.cash);
+      this.pay(u.owner, PAY.hackFob, 'Vorposten übernommen', b.c, b.r, ev.cash); this.addXp(u.owner, 'assault', 80);
       this.say(u.owner === 0 ? 'Vorposten übernommen! Lager und Stellungen gehören jetzt euch' : from === 0 ? `${this.players[u.owner].name} hat euren Vorposten übernommen!` : `${this.players[u.owner].name} übernimmt einen Vorposten`, u.owner === 0 ? 'good' : from === 0 ? 'bad' : 'warn', 0);
       return ev;
     }
@@ -662,22 +796,25 @@ export class Game {
   }
 
   // ---------- Sanitäter ----------
-  reviveTargets(u) { return this.units.filter((t) => !t.dead && t.downed && t.owner === u.owner && distance(t.c, t.r, u.c, u.r) <= 1); }
-  healTargets(u) { return this.units.filter((t) => !t.dead && !t.downed && !t.carried && t !== u && t.owner === u.owner && t.def.cat === 'inf' && t.hp < 90 && distance(t.c, t.r, u.c, u.r) <= 1); }
+  reviveTargets(u) { return u.def.revive ? this.units.filter((t) => !t.dead && t.downed && t.owner === u.owner && distance(t.c, t.r, u.c, u.r) <= 1) : []; }
+  healTargets(u) { return u.def.heal ? this.units.filter((t) => !t.dead && !t.downed && !t.carried && t !== u && t.owner === u.owner && t.def.cat === 'inf' && t.hp < 90 && distance(t.c, t.r, u.c, u.r) <= 1) : []; }
   revive(u, t) {
-    t.downed = 0; t.hp = 40; t.moved = true; t.acted = true;
+    t.downed = 0; t.hp = u.def.revive || 35; t.moved = true; t.acted = true;
     u.acted = true; u.moved = true; u.facing = ang(u.c, u.r, t.c, t.r);
     this.players[u.owner].stats.revives++;
     const ev = { type: 'revive', u: u.id, t: t.id, cash: [] };
     this.pay(u.owner, PAY.revive * this.hzMult(u.c, u.r), 'Wiederbelebt', t.c, t.r, ev.cash);
-    this.gainXp(u, 12, ev);
+    this.gainXp(u, 12, ev); this.addXp(u.owner, 'medic', 60);
     return ev;
   }
   heal(u, t) {
-    const h = Math.min(100 - t.hp, 30); t.hp += h;
+    const list = u.def.healAll ? this.healTargets(u) : [t];
+    let tot = 0;
+    for (const x of list) { const h = Math.min(100 - x.hp, u.def.heal || 25); x.hp += h; tot += h; }
     u.acted = true; u.moved = true; u.facing = ang(u.c, u.r, t.c, t.r);
-    const ev = { type: 'healed', u: u.id, t: t.id, amount: h, cash: [] };
-    this.pay(u.owner, PAY.heal * this.hzMult(u.c, u.r), 'Verbunden', t.c, t.r, ev.cash);
+    const ev = { type: 'healed', u: u.id, t: t.id, amount: Math.round(tot / list.length), all: list.map((x) => x.id), cash: [] };
+    this.pay(u.owner, PAY.heal * list.length * this.hzMult(u.c, u.r), 'Verbunden', t.c, t.r, ev.cash);
+    this.addXp(u.owner, 'medic', 20 * list.length);
     return ev;
   }
 
@@ -694,7 +831,7 @@ export class Game {
     const f = this.fobCovering(u.owner, u.c, u.r);
     const near = distance(f.c, f.r, this.cz.c, this.cz.r) <= this.cz.rad + 3;
     const ev = { type: 'pallet', u: u.id, b: f.id, items: [...u.cargoP], cash: [] };
-    for (const k of u.cargoP) { f.stock[k] += PALLETS[k].amount; if (near) this.pay(u.owner, PAY.pallet, 'Lieferprämie', f.c, f.r, ev.cash); }
+    for (const k of u.cargoP) { f.stock[k] = (f.stock[k] || 0) + PALLETS[k].amount; if (near) this.pay(u.owner, PAY.pallet, 'Lieferprämie', f.c, f.r, ev.cash); this.addXp(u.owner, u.def.mt === 'air' ? 'pilot' : 'driver', 50); }
     u.cargoP = []; u.acted = true; u.moved = true;
     if (u.owner === 0) this.say(near ? 'Paletten abgeladen — Lager aufgefüllt, Lieferprämie kassiert' : 'Paletten abgeladen (Prämie gibt es nur für Vorposten nahe der Control Zone)', 'good');
     return ev;
@@ -710,24 +847,30 @@ export class Game {
     else cands = this.safeHexes(o).sort((a, b) => distance(a[0], a[1], this.cz.c, this.cz.r) - distance(b[0], b[1], this.cz.c, this.cz.r));
     return cands.filter(([c, r]) => (air ? !this.unitAt(c, r, true) : this.groundFree(c, r) && this.cost(UNITS[type].mt, c, r) !== Infinity) && (this.safeOwner(c, r) < 0 || this.safeOwner(c, r) === o));
   }
-  canBuy(o, type, at = 'hq') {
+  canBuy(o, type, at = 'hq', lo = null) {
     const d = UNITS[type], p = this.players[o];
-    if (!d || d.noBuy || (d.faction && d.faction !== p.faction) || this.current !== o) return false;
+    if (!d || d.noBuy || this.current !== o) return false;
     if (at === 'spz' && (d.cat !== 'inf' || !this.spzReady(o))) return false;
+    if (d.cat !== 'inf' && !this.canUse(o, type)) return false;
     if (d.free) { if (p.rekrutRound === this.round || this.ownUnits(o).filter((u) => !u.downed).length >= 5) return false; }
-    else if (p.credits < this.unitCost(o, type)) return false;
+    else {
+      if (d.cat === 'inf') { lo = lo || this.defaultLoadout(o, type); if (!this.loadoutOk(o, lo)) return false; }
+      if (p.credits < this.unitCost(o, type, lo)) return false;
+    }
     return this.spawnHexes(o, type, at).length > 0;
   }
-  buy(o, type, at = 'hq') {
-    if (!this.canBuy(o, type, at)) return null;
-    const p = this.players[o], d = UNITS[type], h = this.spawnHexes(o, type, at)[0];
-    const cost = d.free ? 0 : this.unitCost(o, type);
+  buy(o, type, at = 'hq', lo = null) {
+    const d = UNITS[type];
+    if (d.cat === 'inf') lo = d.free ? this.defaultLoadout(o, 'rekrut') : (lo || this.defaultLoadout(o, type));
+    if (!this.canBuy(o, type, at, lo)) return null;
+    const p = this.players[o], h = this.spawnHexes(o, type, at)[0];
+    const cost = d.free ? 0 : this.unitCost(o, type, lo);
     p.credits -= cost; p.stats.spent += cost;
     if (d.free) p.rekrutRound = this.round;
     if (at === 'spz') p.deploys--;
-    const u = this.addUnit(o, type, h[0], h[1]);
+    const u = this.addUnit(o, type, h[0], h[1], lo);
     u.moved = true; u.acted = true; u.fresh = true;
-    p.order.push(type);
+    p.order.push(d.cat === 'inf' ? { type, lo } : { type });
     const src = at === 'spz' ? this.spzOf(o) : this.hqOf(o);
     return { type: 'spawn', u: u.id, from: src ? src.id : 0, at };
   }
@@ -741,6 +884,10 @@ export class Game {
     p.deploys = SPZ_DEPLOYS;
     // Hack-Versuche, deren Hacker nicht mehr an der Konsole steht, brechen ab
     for (const b of this.buildings) if (!b.dead && b.hack && b.hack.owner === owner) { const h = this.get(b.hack.by); if (!h || h.downed || distance(h.c, h.r, b.c, b.r) > 1) b.hack = null; }
+    // Rauch und Markierungen dieser Fraktion verfallen
+    this.smoke = this.smoke.filter((x) => x.owner !== owner);
+    for (const u of this.units) if (u.marked && u.marked.owner === owner) u.marked = null;
+    const hasB = (type, fob) => this.buildings.some((b) => !b.dead && b.type === type && b.owner === owner && b.fob === fob.id && b.turnsLeft <= 0);
     for (const u of this.units) {
       if (u.dead || u.owner !== owner) continue;
       if (u.downed) {
@@ -748,17 +895,20 @@ export class Game {
         if (u.downed <= 0) { u.downed = 1; this.kill(u, null); ev.push({ type: 'bleed', u: u.id }); if (owner === 0) this.say(`${u.def.name} ist verblutet`, 'bad'); continue; }
         u.moved = true; u.acted = true; continue;
       }
-      u.moved = false; u.acted = false; u.attacked = false; u.reflex = false; u.ambushed = false; u.fresh = false; u.didLand = false;
+      u.moved = false; u.acted = false; u.attacked = false; u.reflex = false; u.ambushed = false; u.fresh = false; u.didLand = false; u.marked_used = false; u.fuelBoost = 0;
       if (u.def.flares) u.flareReady = true;
       if (u.rank && RANKS[u.rank].regen && u.hp < 100) u.hp = Math.min(100, u.hp + RANKS[u.rank].regen);
       if (u.landed && u.hp < 100) { const h = Math.min(100 - u.hp, 15); u.hp += h; ev.push({ type: 'heal', u: u.id, amount: h }); }
       // Nachschub: am eigenen HQ oder im FOB-Bereich
       const atHq = this.inSafe(u.c, u.r, owner), fob = this.fobCovering(owner, u.c, u.r);
-      if (u.def.ammo && u.ammo < u.def.ammo && (atHq || (fob && (u.def.mt !== 'air' || this.buildings.some((b) => !b.dead && b.type === 'werkstatt' && b.fob === fob.id && b.turnsLeft <= 0))))) { u.ammo = u.def.ammo; ev.push({ type: 'rearm', u: u.id }); }
+      if (u.def.ammo && u.ammo < u.def.ammo && (atHq || (fob && (u.def.mt !== 'air' || hasB('werkstatt', fob))))) { u.ammo = u.def.ammo; ev.push({ type: 'rearm', u: u.id }); }
+      if (atHq && u.gearUses && u.lo) { const full = infDef(u.lo).gearUses || {}; for (const k in full) u.gearUses[k] = full[k]; }
+      if (atHq && u.def.builder) u.supplies = 20;
       if (atHq && u.hp < 100) { const h = Math.min(100 - u.hp, 25); u.hp += h; if (u.def.spawnPoint && u.hp >= 50) u.antenna = true; ev.push({ type: 'heal', u: u.id, amount: h }); }
-      else if (fob && (u.def.cat === 'veh' || u.def.mt === 'air') && u.hp < 100 && this.buildings.some((b) => !b.dead && b.type === 'werkstatt' && b.owner === owner && b.fob === fob.id && b.turnsLeft <= 0)) {
-        const h = Math.min(100 - u.hp, 25); u.hp += h; if (u.def.spawnPoint && u.hp >= 50) u.antenna = true; ev.push({ type: 'heal', u: u.id, amount: h });
+      else if (fob && (u.def.cat === 'veh' || u.def.mt === 'air') && u.hp < 100 && hasB('werkstatt', fob) && fob.stock.mech >= 2) {
+        fob.stock.mech -= 2; const h = Math.min(100 - u.hp, 25); u.hp += h; if (u.def.spawnPoint && u.hp >= 50) u.antenna = true; ev.push({ type: 'heal', u: u.id, amount: h });
       }
+      if (fob && u.def.cat === 'veh' && hasB('tankstelle', fob) && fob.stock.sprit >= 1) { fob.stock.sprit--; u.fuelBoost = 1; }
     }
     for (const b of this.buildings) if (!b.dead && b.owner === owner) { b.attacked = false; b.reflex = false; b.acted = false; }
     return ev;
@@ -792,6 +942,7 @@ export class Game {
     if (lead >= 0) { this.players[lead].score++; this.players[lead].stats.ticks++; }
     ev.push({ type: 'tick', leader: lead, heads, scores: this.players.map((p) => p.score) });
     // 2. Zonengeld für alle, je Kopf
+    for (const u of this.headsOf(0).at) { const q = this.bodyPos(u); this.addXp(0, u.def.cat === 'inf' ? 'assault' : this.trackOf(u), this.inHZ(q.c, q.r) ? 8 : 4); }
     for (const p of this.players) {
       const h = this.headsOf(p.id);
       const amt = h.cz * PAY.cz + h.hz * PAY.hz;
@@ -867,10 +1018,10 @@ export class Game {
 
   // ---------- Speichern ----------
   serialize() {
-    const strip = (o) => { const c = { ...o }; for (const k of ['def', 'vis', 'anim', 'gone', 'hitFlash', 'recoil', 'forceShow', 'crashing', 'aimUntil', 'z', 'bank']) delete c[k]; return c; };
+    const strip = (o) => { const c = { ...o }; for (const k of ['def', 'vis', 'anim', 'gone', 'hitFlash', 'recoil', 'forceShow', 'crashing', 'aimUntil', 'z', 'bank', 'mineEv', 'firing']) delete c[k]; return c; };
     return JSON.stringify({ v: 1, W: this.W, H: this.H, seed: this.map.seed, ter: this.map.ter, round: this.round, current: this.current, target: this.target, spzUnlocked: this.spzUnlocked,
       players: this.players, units: this.units.filter((u) => !u.dead).map(strip), buildings: this.buildings.filter((b) => !b.dead).map(strip),
-      cz: this.cz, hz: this.hz, towers: this.towers, known: this.known.map((s) => [...s]), codeUses: this.codeUses, discovered: [...this.discovered],
+      cz: this.cz, hz: this.hz, towers: this.towers, known: this.known.map((s) => [...s]), codeUses: this.codeUses, discovered: [...this.discovered], mines: this.mines, smoke: this.smoke, xp: this.xp,
       diffName: this.diffName, settings: this.settings || null, konto: !!this.konto });
   }
   static restore(map, data, diff) {
@@ -879,7 +1030,8 @@ export class Game {
     g.diffName = data.diffName; g.round = data.round; g.current = 0; g.settings = data.settings || null; g.konto = data.konto;
     g.spzUnlocked = data.spzUnlocked;
     g.players = data.players.map((p) => ({ ...p, perk: FACTIONS[p.faction].perk || {} }));
-    g.units = data.units.map((u) => ({ ...u, def: u.landed ? g.landedDef(u.type) : UNITS[u.type] }));
+    g.units = data.units.map((u) => ({ ...u, def: u.lo ? infDef(u.lo) : u.landed ? g.landedDef(u.type) : UNITS[u.type] }));
+    g.mines = data.mines || []; g.smoke = data.smoke || []; g.xp = { ...g.xp, ...(data.xp || {}) };
     g.buildings = data.buildings.map((b) => ({ ...b, def: BUILDINGS[b.type], rise: 1 }));
     g.cz = data.cz; g.hz = data.hz; g.towers = data.towers; g.known = data.known.map((a) => new Set(a)); g.codeUses = data.codeUses;
     g.discovered = new Set(data.discovered || []);

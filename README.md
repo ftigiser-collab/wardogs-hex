@@ -28,13 +28,20 @@ Spin-off von [Sandthron](https://github.com/ftigiser-collab/sandthron) im Settin
 
 **Weitere Mechaniken:** Verwundet statt tot (Sanitäter retten), Munitionswahl FMJ/HP/AP, Niederhalten durch MG/Minigun, Einsatz-SPz als vorgeschobener Spawnpunkt mit zerstörbarer Antenne, FOB mit Lager, Hammerschlägen und hackbarer Konsole, Paletten-Logistik, zerstörbare Ortschaften.
 
-## Stand: Stufe 1
+## Stufe 1
 - Komplettes Regelwerk, KI für drei Fraktionen, ländliche Karte (Felder, Wälder, Ortschaften, Fluss mit Brücken, Straßen, Hügel)
 - Eigene Grafik für alle Einheiten, Bauten, Funktürme und Abzeichen
 
+## Stand: Stufe 2
+- **Loadouts wie in Wardogs:** Infanterie aus Waffe + bis zu 2 Ausrüstungsteilen + Weste, Rolle ergibt sich aus der Ausrüstung. 30 Waffen (KH-2002 bis AMR 50, RPG-7, Verba, MGL-40), 16 Ausrüstungsteile (C4, Molotow, Rauch, Defi, Entfernungsmesser, Claymore, Ghillie, drei Hämmer, Panzermine …)
+- **Sechs Spuren** (Sturm, Sanität, Aufklärung, Unterstützung, Fahrer, Pilot) mit Konto-XP, Wardog-Stufe als Summe, **Waffenkammer** zum Freischalten gegen Gebühr
+- **Wardogs-Fahrzeuge:** Bobcat, Kodiak, Ural, Wolf, Buggy, Pickup, Humvee, T-72, L2A6, Gepard, SPH-2, MH-6, AH-6, Lakota, Havoc
+- **FOB-Bauten mit drei Hammerstufen:** Sandsack, Draht, Panzersperre, Zelt, HESCO, Tür, Tor, Lautsprecher, Bunker, Aufklärungsturm, Bremer, Schutzraum, Stingray, Mörser, Tankstation, Reparaturstation, SAM, CIWS, Bohrturm; Feldbauten aus dem Rucksack
+- **Große Karten** bis 60×42, Symbolansicht beim Herauszoomen, **Taktikkarte** im Wardogs-Stil (M)
+
 ## Geplant
-- Fortschrittsspuren (Sturm, Sanität, Aufklärung, Pionier, Fahrer, Pilot) mit Freischaltungen gegen Gebühr
 - Mehrere Kartentypen und rotierende Zonen
+- Option: gleichzeitige Zugauswertung (WeGo) als eigener Modus
 - **Später:** Sound und Musik
 
 ## Technik

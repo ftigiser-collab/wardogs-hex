@@ -28,6 +28,7 @@
     <div class="spacer"></div>
     <button id="hqbtn" title="Hauptquartier: Einheiten kaufen">HQ</button>
     <button id="zonebtn" title="Zur Hot Zone">◎</button>
+    <button id="mapbtn" title="Taktikkarte (M)">🗺</button>
     <button id="speedbtn" title="Tempo der gegnerischen Züge">⏩ 1×</button>
     <button id="helpbtn" title="Hilfe">?</button>
     <button id="nextunit">Nächste Einheit</button>
@@ -35,6 +36,7 @@
   </header>
 
   <canvas id="minimap" width="220" height="140"></canvas>
+  <div id="tacmap" class="hidden"><canvas></canvas><details class="tm-legend" open><summary>Legende</summary><span><i class="lg-cz"></i>CZ = Control Zone</span><span><i class="lg-hz"></i>HZ = Hot Zone (doppelte Punkte)</span><span>▲ eigene Trupps · Farbe = Fraktion</span><span>[n/m] = Sitze belegt/gesamt</span><span>◆ Zahl = Bohrturm, Treibstoff</span><span>A–D = Funktürme</span><span>🛒 = HQ (Laden) · ⚑ = FOB</span><em>Tippen: dorthin springen · M/Esc: schließen</em></details><button class="tm-close">×</button></div>
   <div id="zoom"><button id="zoomin">+</button><button id="zoomout">−</button></div>
   <div id="seedinfo"></div>
   <div id="log"></div>
@@ -57,15 +59,16 @@
       <h3>Steuerung</h3>
       <ul>
         <li><b>Antippen / Linksklick:</b> Einheit wählen, dann blaues Feld antippen zum Ziehen. Rot markierte Gegner antippen zeigt die Vorschau, nochmal antippen greift an.</li>
-        <li><b>Ziehen</b> verschiebt die Karte, <b>zwei Finger / Mausrad</b> zoomt. <b>HQ</b> springt zum Hauptquartier (Einkauf), <b>◎</b> zur Hot Zone, <b>⏩</b> beschleunigt die gegnerischen Züge.</li>
-        <li>Tastatur: <b>E</b> Runde beenden, <b>N</b> nächste Einheit, <b>Esc</b> abbrechen, <b>WASD</b> Karte, <b>Leertaste</b> Angriff bestätigen.</li>
+        <li><b>Ziehen</b> verschiebt die Karte, <b>zwei Finger / Mausrad</b> zoomt. <b>HQ</b> springt zum Hauptquartier (Einkauf), <b>◎</b> zur Hot Zone, <b>🗺</b> öffnet die Taktikkarte, <b>⏩</b> beschleunigt die gegnerischen Züge.</li>
+        <li><b>Weit herausgezoomt</b> schaltet die Karte auf Symbole wie in Wardogs: Pfeile = Trupps, [n/m] = belegte/freie Sitze, Raute mit Zahl = Bohrturm mit Treibstoff, Einkaufswagen = HQ, Fahne = FOB.</li>
+        <li>Tastatur: <b>E</b> Runde beenden, <b>N</b> nächste Einheit, <b>Esc</b> abbrechen, <b>M</b> Taktikkarte, <b>WASD</b> Karte, <b>Leertaste</b> Angriff bestätigen.</li>
       </ul>
       <h3>Sieg: die Zone halten</h3>
       <ul>
         <li><b>Drei Fraktionen</b> kämpfen gleichzeitig: ihr und zwei KI-Gegner, jeder gegen jeden. Die Zugfolge rotiert jede Runde, damit niemand dauerhaft zuletzt zieht.</li>
-        <li><b>Control Zone (CZ, grüner Kreis):</b> Am Ende jeder Runde wird gewertet. Die Fraktion mit den meisten Köpfen in der CZ bekommt <b>1 Punkt</b>, bei Gleichstand niemand. Wer zuerst das Ziel erreicht (12, 20 oder 30 Punkte), gewinnt.</li>
+        <li><b>Control Zone (CZ, grüner Bereich, auf der Taktikkarte weißer Kreis):</b> Am Ende jeder Runde wird gewertet. Die Fraktion mit den meisten Köpfen in der CZ bekommt <b>1 Punkt</b>, bei Gleichstand niemand. Wer zuerst das Ziel erreicht (12, 20 oder 30 Punkte), gewinnt.</li>
         <li><b>Köpfe:</b> jede Bodeneinheit zählt 1, Insassen von Bodenfahrzeugen zählen mit. Hubschrauber in der Luft und Verwundete zählen nicht. Kills allein bringen keine Punkte — nur Präsenz.</li>
-        <li><b>Hot Zone (HZ, oranger Bereich):</b> ein kleiner Bereich in der CZ, der jede Runde ein Feld weiterzieht (gestrichelt: nächste Position, Pfeil: Richtung). Jeder Kopf in der HZ zählt <b>doppelt</b>, und Rettungen, Hacks und Bauen bringen dort doppeltes Geld.</li>
+        <li><b>Hot Zone (HZ, oranger Bereich, auf der Taktikkarte gelb mit Herzschlag):</b> ein kleiner Bereich in der CZ, der jede Runde ein Feld weiterzieht (gestrichelt: nächste Position, Pfeil: Richtung). Jeder Kopf in der HZ zählt <b>doppelt</b>, und Rettungen, Hacks und Bauen bringen dort doppeltes Geld.</li>
         <li><b>Funktürme A–D</b> stehen am Rand der CZ. Infanterie auf einem Turm ohne Feind daneben kann die Konsole <b>hacken</b>: verrät eine Ziffer des vierstelligen Codes. Wer drei Ziffern kennt, kennt den Code. Auf einem eigenen Turm eingegeben, <b>springt die Hot Zone dorthin</b> und bleibt 3 Runden. Danach hat der Turm 6 Runden Abklingzeit, insgesamt gibt es 5 Eingaben pro Partie.</li>
         <li><b>Bohrturm</b> (im Vorposten bauen, mit 6 Treibstoff starten): zieht die Hot Zone jede Runde zum Vorposten, verbraucht 1 Treibstoff pro Runde. Zieht jeden Feind an.</li>
       </ul>
@@ -78,21 +81,31 @@
         <li><b>Rekrut:</b> Einmal pro Runde gratis, solange ihr weniger als 5 Einheiten habt.</li>
         <li><b>Letzte Bestellung wiederholen</b> kauft die Einheiten eurer letzten Runde mit einem Tipp nach.</li>
       </ul>
-      <h3>Einheiten und Ausrüstung</h3>
+      <h3>Loadout, Stufen und Waffenkammer</h3>
       <ul>
+        <li><b>Infanterie per Loadout:</b> Im HQ eine Vorlage antippen (Sturm, Sanitäter, Pionier, Späher, MG-Schütze, Panzer- oder Fliegerabwehr), dann Waffe, bis zu 2 Ausrüstungsteile und Weste wählen. Die Rolle ergibt sich daraus: Hammer = Pionier, Reanimator/Defi/Sanitätstasche = Sanitäter, Scharfschützengewehr = Späher, LMG = MG-Schütze, RPG/MAAWS/Verba/MGL = Panzerabwehr.</li>
+        <li><b>Sechs Spuren:</b> Sturm, Sanität, Aufklärung, Unterstützung, Fahrer, Pilot. Eure Trupps sammeln im Einsatz Erfahrungspunkte (XP) in der passenden Spur — Kämpfen, Hacken und Zone halten, Heilen und Wiederbeleben, Markieren, Bauen und Reparieren, Fahren, Fliegen und Liefern. Nach dem Einsatz landen die XP auf eurem Konto (Sieg ×1,25). Die Wardog-Stufe ist die Summe aller Spuren, an ihr hängen die Westen.</li>
+        <li><b>Waffenkammer</b> (Hauptmenü): Hat eine Spur die nötige Stufe erreicht, schaltet ihr Waffen, Ausrüstung und Fahrzeuge einmalig gegen Gebühr vom Konto frei. Gratis von Anfang an: KH-2002, A-91, AMP-9, MP43, Scout Rifle, Verbandpäckchen, Kleiner Hammer, Bobcat, Kodiak, MH-6.</li>
+        <li><b>Gegner</b> rüsten sich je nach Schwierigkeit bis Stufe 8, 18 oder 30 aus.</li>
+        <li><b>Ausrüstung im Einsatz:</b> C4 (Fahrzeug oder Bauwerk daneben; HESCO-Block fällt nach 2, HESCO-Wall nach 4, Bremer nach 7 Ladungen), Molotow (Feld in Reichweite 2, 40 gegen Infanterie), Rauch (Feld in Reichweite 2: bis zu eurem nächsten Zug nur aus nächster Nähe zu treffen), Entfernungsmesser (Feind markieren: +20 % Schaden), Claymore und Panzermine (versteckt auf ein Nachbarfeld), Ghillie-Anzug (getarnt, solange still). Am HQ füllt sich alles wieder auf.</li>
+      </ul>
+      <h3>Einheiten</h3>
+      <ul>
+        <li><b>Fahrzeuge aus Wardogs:</b> Bobcat, Kodiak (auch mit M249), Ural (Paletten, gepanzert, mit M249), Wolf (auch mit M2), Buggy, Pickup, Humvee (M249, Minigun), T-72, L2A6, Gepard (Flak), SPH-2-Artillerie. Hubschrauber: MH-6, AH-6 Minigun und Raketen, Lakota (auch mit Minigun), Havoc.</li>
         <li><b>Munitionswahl:</b> Handwaffen schießen FMJ (Allround), HP (+25 % gegen Infanterie, schwach gegen Panzerung) oder AP (stark gegen Fahrzeuge und Hubschrauber). Umschalten kostet nichts.</li>
         <li><b>Verwundet statt tot:</b> Infanterie auf 0 geht zu Boden und verblutet nach 2 eigenen Rundenstarts. Ein Sanitäter daneben belebt wieder. Ein weiterer Treffer erledigt den Verwundeten (Abschuss bestätigt).</li>
         <li><b>Transport:</b> Trupp neben Fahrzeug oder Hubschrauber stellen, „Einsteigen“, fahren, „Aussteigen“ — ausgestiegene Trupps können sofort angreifen. Wird das Fahrzeug zerstört, sterben die Insassen.</li>
         <li><b>Einsatz-SPz:</b> Sobald eine Fraktion 20 % des Punkteziels hat, bekommt jede ihren SPz. Neue Infanterie kann direkt an ihm eingesetzt werden (2 pro Runde). Unter 50 % Stärke fällt die Antenne aus, ein Pionier repariert. Zerstört: Ersatz nach 4 Runden.</li>
         <li><b>MG und Minigun</b> halten nieder: Getroffene haben in ihrer nächsten Runde 1 Bewegung weniger.</li>
-        <li><b>Artillerie, Grad und Mörser</b> treffen auch die Nachbarfelder und können Häuser zu Trümmern schießen.</li>
+        <li><b>Artillerie und Mörser</b> treffen auch die Nachbarfelder und können Häuser zu Trümmern schießen.</li>
         <li><b>Hubschrauber</b> fliegen über alles, zählen in der Luft aber nicht als Kopf. Kampfhubschrauber werfen Täuschkörper gegen eine SAM-Rakete pro Runde.</li>
       </ul>
       <h3>Vorposten (FOB) und Logistik</h3>
       <ul>
-        <li><b>FOB errichten:</b> Pionier neben ein freies Feld (mindestens 5 vom eigenen HQ und von anderen FOBs), $7.500. Einflussbereich 2 Felder, startet mit 30 Material.</li>
-        <li><b>Bauen:</b> Pionier im FOB-Bereich wählt eine Stellung und ein Nachbarfeld. Jede Pionier-Aktion ist ein Hammerschlag (⚒). Sandsäcke (+20 % Deckung, begehbar), HESCO und Bremer-Wand (sperren), Mörser, Talon-SAM, Vanguard-CIWS, Werkstatt, Bohrturm, Beobachtungsturm.</li>
-        <li><b>Paletten:</b> Lastwagen oder Transporthubschrauber in der sicheren Zone des HQ laden Material- oder Treibstoffpaletten ($400), im FOB-Bereich abladen füllt das Lager. Liegt der FOB nahe der Zone, gibt es $1.500 Lieferprämie je Palette.</li>
+        <li><b>FOB errichten:</b> Pionier neben ein freies Feld (mindestens 5 vom eigenen HQ und von anderen FOBs), $7.500. Einflussbereich 2 Felder, startet mit 80 Material.</li>
+        <li><b>Drei Hämmer wie in Wardogs:</b> Klein (I) baut Sandsackwall, Stacheldraht (Infanterie kommt nur mühsam durch), Panzersperre (nur zu Fuß passierbar), Aufklärungszelt (tarnt Trupps), HESCO-Block. Mittel (II) dazu Tür (nur eigene Infanterie), Tor (eigene Einheiten), HESCO-Wall, Lautsprecher (+10 % Schaden in der Nähe). Groß (III) baut alles: Bunker, Aufklärungsturm (+1 Reichweite), Bremer-Wand, Schutzraum (immun gegen Splitter und Artillerie), Stingray-Drohnen, Mörser, Tankstation, Reparaturstation, SAM, CIWS, Bohrturm — und hämmert doppelt so schnell.</li>
+        <li><b>Feldbauten:</b> Alles mit Hammer I baut der Pionier auch außerhalb des FOB — aus seinem Rucksack (20 Material, am HQ oder FOB auffüllbar). Jede Pionier-Aktion an einer Baustelle ist ein Hammerschlag (⚒).</li>
+        <li><b>Paletten:</b> Bobcat, Ural, Pickup, MH-6 oder Lakota laden in der sicheren Zone des HQ Material-, Treibstoff- oder Mechanikpaletten ($400), im FOB-Bereich abladen füllt das Lager. Treibstoff speist Bohrturm und Tankstation (+1 Bewegung für Fahrzeuge), Mechanik die Reparaturstation und die Stingray-Drohnen. Liegt der FOB nahe der Zone, gibt es $1.500 Lieferprämie je Palette.</li>
         <li><b>FOB hacken:</b> Feindliche Infanterie neben der Konsole hackt in zwei aufeinanderfolgenden Runden — dann gehören FOB, Lager und alle Stellungen ihr.</li>
       </ul>
       <h3>Gelände</h3>
@@ -113,6 +126,7 @@
 
   <div id="skirmish" class="ovl"></div>
   <div id="saves" class="ovl"></div>
+  <div id="armory" class="ovl"></div>
 
   <div id="menu">
     <div class="m-box">
@@ -122,6 +136,7 @@
       <div class="m-crests" id="mcrests"></div>
       <div class="m-konto" id="mkonto"></div>
       <button id="start" class="primary big">Einsatz</button>
+      <button id="armorybtn" class="big">Waffenkammer</button>
       <button id="loadbtn" class="big">Spielstände</button>
       <button id="continue" class="big" style="display:none">Fortsetzen</button>
       <div class="loading">Das Einsatzgebiet wird erkundet …</div>

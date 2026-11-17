@@ -1,5 +1,5 @@
 // Gegner-KI: Zonenkontrolle, Einkauf, Transport, Vorposten, Turmcodes, Logistik
-import { UNITS, BUILDINGS, PALLETS, WEAPONS, AMMO, AMMO_ORDER, BUILD_LIST } from './data.js';
+import { UNITS, BUILDINGS, PALLETS, WEAPONS, AMMO, AMMO_ORDER, BUILD_LIST, TEMPLATES, roleOf, GEAR, templateLoadout } from './data.js';
 import { neighbors, distance, ring } from './hex.js';
 
 function value(g, e) {
@@ -93,7 +93,27 @@ async function unitTurn(g, act, u, ctx, armorShare) {
   if (u.def.transport && u.def.cat !== 'inf' && await ferryTurn(g, act, u, ctx)) return;
   if (g.isFootInf(u) && await towerTurn(g, act, u, ctx)) return;
   if (g.isFootInf(u) && g.canHackFob(u)) { await act.act(g.hackFob(u, g.hackFobTargets(u)[0])); return; }
+  if (await gearTurn(g, act, u, ctx)) return;
   await combatTurn(g, act, u, ctx);
+  // nach dem Zug: markieren, Mine legen
+  if (alive(u) && g.canMark(u)) { const t = g.markTargets(u).sort((a, b) => value(g, b) - value(g, a))[0]; if (t) await act.act(g.mark(u, t)); }
+  if (alive(u) && !u.acted && !u.attacked && u.gearUses) for (const k of ['claymore', 'atmine']) if (g.gearLeft(u, k) && (g.inCZ(u.c, u.r) || g.fobCovering(u.owner, u.c, u.r))) { const h = g.mineHexes(u)[0]; if (h) { await act.act(g.placeMine(u, k, h[0], h[1])); break; } }
+}
+
+// Ausrüstung: C4 gegen Fahrzeug/Bau daneben, Molotow auf Infanterie-Pulks, Rauch für Verwundete
+async function gearTurn(g, act, u, ctx) {
+  if (!u.gearUses || u.acted || u.attacked) return false;
+  if (g.gearLeft(u, 'c4')) { const t = g.c4Targets(u).sort((a, b) => value(g, b) - value(g, a))[0]; if (t && value(g, t) >= 1500) { await act.attack2(u, g.c4(u, t)); return true; } }
+  if (g.gearLeft(u, 'molotow')) {
+    let best = null, bn = 1;
+    for (const [c, r] of g.throwHexes(u)) { const n = g.units.filter((t) => !t.dead && !t.carried && t.c === c && t.r === r && t.owner !== u.owner && t.def.cat === 'inf' && !g.stealthed(t, u.owner)).length; if (n > bn || (n === 1 && bn === 1 && g.units.some((t) => !t.dead && t.c === c && t.r === r && t.owner !== u.owner && t.def.cat === 'inf' && t.hp <= 40))) { bn = Math.max(n, 1.5); best = [c, r]; } }
+    if (best) { await act.act(g.molotow(u, best[0], best[1])); return true; }
+  }
+  if (g.gearLeft(u, 'rauch')) {
+    const d = g.units.find((t) => !t.dead && t.downed && t.owner === u.owner && distance(t.c, t.r, u.c, u.r) <= 2 && ctx.danger[g.i(t.c, t.r)] > 0.8);
+    if (d) { await act.act(g.smokeAt(u, d.c, d.r)); return true; }
+  }
+  return false;
 }
 
 // Zonenwert eines Feldes für diese Einheit (Bodeneinheiten wollen in die Hot Zone)
@@ -250,10 +270,10 @@ async function builderTurn(g, act, u, ctx) {
   }
   const fob = nearest(u, myFobs);
   // Im FOB-Bereich: bauen nach Bedarf
-  const wish = buildWish(g, owner, fob);
+  const wish = buildWish(g, owner, fob, u);
   if (wish && g.canBuild(u, wish)) {
-    const hexes = g.buildHexes(u, wish);
-    const pick = wish === 'hesco' || wish === 'bremer' ? hexes.sort((a, b) => distance(b[0], b[1], fob.c, fob.r) - distance(a[0], a[1], fob.c, fob.r))[0] : hexes.sort((a, b) => distance(a[0], a[1], fob.c, fob.r) - distance(b[0], b[1], fob.c, fob.r))[0];
+    const hexes = g.buildHexes(u, wish).filter(([c, r]) => distance(c, r, fob.c, fob.r) <= 3);
+    const pick = ['hesco', 'hesco_s', 'bremer', 'draht', 'igel', 'sandsack'].includes(wish) ? hexes.sort((a, b) => distance(b[0], b[1], fob.c, fob.r) - distance(a[0], a[1], fob.c, fob.r))[0] : hexes.sort((a, b) => distance(a[0], a[1], fob.c, fob.r) - distance(b[0], b[1], fob.c, fob.r))[0];
     if (pick) { await act.act(g.placeStructure(u, wish, pick[0], pick[1])); return true; }
   }
   // Zur nächsten Baustelle oder in den FOB-Bereich
@@ -269,20 +289,27 @@ async function builderTurn(g, act, u, ctx) {
   }
   return false;
 }
-function buildWish(g, owner, fob) {
-  const have = (t) => g.buildings.filter((b) => !b.dead && b.owner === owner && b.type === t && b.fob === fob.id).length;
+function buildWish(g, owner, fob, u) {
+  const have = (t) => g.buildings.filter((b) => !b.dead && b.owner === owner && b.type === t && (b.fob === fob.id || distance(b.c, b.r, fob.c, fob.r) <= 4)).length;
   const enemyAir = g.units.some((e) => !e.dead && e.owner !== owner && e.def.mt === 'air' && distance(e.c, e.r, fob.c, fob.r) <= 10);
-  const stock = fob.stock.bau;
+  const enemyVeh = g.units.some((e) => !e.dead && e.owner !== owner && e.def.cat === 'veh' && distance(e.c, e.r, fob.c, fob.r) <= 10);
   const list = [];
   if (enemyAir && !have('sam') && !have('ciws')) list.push('sam');
   if (!have('moerser')) list.push('moerser');
-  if (have('hesco') < 2) list.push('hesco');
+  if (have('hesco') + have('hesco_s') < 2) list.push('hesco', 'hesco_s');
   if (!have('bohrturm') && !g.buildings.some((b) => !b.dead && b.owner === owner && b.type === 'bohrturm')) list.push('bohrturm');
+  if (!have('zelt')) list.push('zelt');
   if (!have('werkstatt') && g.ownUnits(owner).some((x) => x.def.cat === 'veh' || x.def.mt === 'air')) list.push('werkstatt');
+  if (!have('bunker')) list.push('bunker');
+  if (enemyVeh && have('igel') < 2) list.push('igel');
   if (have('sandsack') < 2) list.push('sandsack');
+  if (!have('tankstelle') && g.ownUnits(owner).some((x) => x.def.cat === 'veh')) list.push('tankstelle');
+  if (enemyVeh && !have('stingray')) list.push('stingray');
   if (enemyAir && !have('ciws')) list.push('ciws');
+  if (!have('lautsprecher')) list.push('lautsprecher');
+  if (have('draht') < 2) list.push('draht');
   if (have('hesco') < 4) list.push('hesco');
-  for (const t of list) if (stock >= BUILDINGS[t].bau) return t;
+  for (const t of list) if (u ? !g.buildBlock(u, t) : fob.stock.bau >= BUILDINGS[t].bau) return t;
   return null;
 }
 
@@ -301,7 +328,8 @@ async function logisticsTurn(g, act, u, ctx) {
   if ((u.passengers || []).length) return false;
   if (g.inSafe(u.c, u.r, owner)) {
     const reserve = 1500;
-    const want = drill && fob.stock.sprit < 8 ? 'sprit' : fob.stock.bau < 40 ? 'bau' : drill && fob.stock.sprit < 14 ? 'sprit' : null;
+    const hasB = (t) => g.buildings.some((b) => !b.dead && b.owner === owner && b.type === t && b.fob === fob.id);
+    const want = drill && fob.stock.sprit < 8 ? 'sprit' : fob.stock.bau < 40 ? 'bau' : (hasB('werkstatt') || hasB('stingray')) && (fob.stock.mech || 0) < 10 ? 'mech' : (drill || hasB('tankstelle')) && fob.stock.sprit < 14 ? 'sprit' : null;
     if (!want) return false;
     while (g.canLoadPallet(u) && p.credits >= PALLETS[want].cost + reserve) g.loadPallet(u, (u.cargoP.length && want === 'sprit' && fob.stock.bau < 20) ? 'bau' : want);
     if (u.cargoP.length) { await moveToward(g, act, u, fob.c, fob.r); return true; }
@@ -393,45 +421,50 @@ function codeWorth(g, owner, tw) {
 }
 
 // ---------- Einkauf ----------
+// erste verfügbare Variante aus einer Wunschliste (beste zuerst)
+const pickUnit = (g, owner, list) => list.find((t) => UNITS[t] && g.canUse(owner, t)) || null;
 async function aiShop(g, act, owner, ctx) {
   const p = g.players[owner];
   const units = g.ownUnits(owner);
   const count = (t) => units.filter((u) => u.type === t).length;
+  const countBy = (f) => units.filter(f).length;
   const inf = units.filter((u) => u.def.cat === 'inf');
   const foesVeh = g.units.filter((e) => !e.dead && e.owner !== owner && (e.def.armor === 'heavy' || e.def.armor === 'light')).length;
   const foesAir = g.units.filter((e) => !e.dead && e.owner !== owner && e.def.mt === 'air').length;
   const hasFob = g.fobsOf(owner).length > 0;
   const spzFwd = g.spzReady(owner) && distance(ctx.spz?.c ?? 0, ctx.spz?.r ?? 0, g.cz.c, g.cz.r) <= g.cz.rad + 3;
-  // Reserve für den Vorposten, solange keiner steht
   const reserve = !hasFob && count('pionier') ? BUILDINGS.fob.cash : 600;
   const wish = [];
   if (!count('pionier') || (hasFob && count('pionier') < 2 && g.round > 6)) wish.push('pionier');
   if (count('sani') < Math.ceil(inf.length / 4)) wish.push('sani');
-  if (foesVeh >= 2 && count('panzerjaeger') < Math.ceil(foesVeh / 2)) wish.push('panzerjaeger');
-  if (foesAir && count('rotorjeep') + count('panzerjaeger') < foesAir + 1) wish.push(foesAir > 1 ? 'rotorjeep' : 'panzerjaeger');
-  if (hasFob && !units.some((u) => u.def.pallets) && p.credits > 9000) wish.push('laster');
-  if (p.credits > 26000 && count('kampfheli') < 1) wish.push('kampfheli');
-  if (p.credits > 17000 && count('panzer') < 2) wish.push('panzer');
-  const sp = { ironstar: 'sperber', volkhova: 'grad', simurgh: 'drohnen' }[p.faction];
-  if (p.credits > (sp === 'drohnen' ? 7000 : 16000) && count(sp) < (sp === 'drohnen' ? 2 : 1)) wish.push(sp);
-  if (p.credits > 20000 && count('artillerie') < 1 && g.round > 8) wish.push('artillerie');
+  if (foesVeh >= 2 && countBy((u) => u.type === 'panzerjaeger' && u.def.gun !== 'verba') < Math.ceil(foesVeh / 2)) wish.push('panzerjaeger');
+  if (foesAir && countBy((u) => u.def.gun === 'verba' || u.type === 'gepard') < foesAir + 1) wish.push(pickUnit(g, owner, foesAir > 1 && p.credits > 15000 ? ['gepard'] : []) || 'flak');
+  if (hasFob && !units.some((u) => u.def.pallets) && p.credits > 6000) wish.push(pickUnit(g, owner, p.credits > 12000 ? ['ural_def', 'ural', 'pickup', 'bobcat'] : ['pickup', 'ural', 'bobcat']));
+  if (p.credits > 24000 && countBy((u) => u.def.mt === 'air' && u.def.weapon) < 1 + Math.floor(p.credits / 30000)) { const h = pickUnit(g, owner, ['havoc', 'ah6r', 'lakota_mini', 'ah6m']); if (h) wish.push(h); }
+  if (p.credits > 17000 && countBy((u) => u.def.mt === 'track' && !u.def.spawnPoint && u.def.weapon !== 'artillery') < 2) { const t = pickUnit(g, owner, ['l2a6', 't72']); if (t) wish.push(t); }
+  if (p.credits > 12000 && countBy((u) => u.def.cat === 'veh' && u.def.weapon && u.def.mt === 'wheel') < 2 + Math.floor(p.credits / 15000)) { const t = pickUnit(g, owner, ['humvee_mini', 'humvee_m249', 'wolf_m2', 'kodiak_m249']); if (t) wish.push(t); }
+  if (p.credits > 20000 && count('sph2') < 1 && g.round > 8) { const t = pickUnit(g, owner, ['sph2']); if (t) wish.push(t); }
   const transportCap = units.filter((u) => u.def.transport && u.def.cat !== 'inf' && !u.def.spawnPoint).reduce((a, u) => a + u.def.transport, 0);
-  if (!spzFwd && transportCap < 2 + Math.floor(g.round / 10) * 2) wish.push(p.credits > 14000 && g.round > 6 ? 'heli' : 'jeep');
+  if (!spzFwd && transportCap < 2 + Math.floor(g.round / 10) * 2) wish.push(pickUnit(g, owner, p.credits > 14000 && g.round > 6 ? ['lakota', 'mh6'] : ['pickup', 'humvee', 'wolf', 'kodiak']));
   if (count('mgtrupp') < 1 + Math.floor(inf.length / 6)) wish.push('mgtrupp');
   if (count('spaeher') < 1) wish.push('spaeher');
   const filler = ['schuetze', 'schuetze', 'mgtrupp', 'schuetze', 'panzerjaeger', 'sani'];
   let bought = 0;
   const evs = [];
   const tryBuy = (t) => {
-    const d = UNITS[t]; if (!d || d.noBuy || (d.faction && d.faction !== p.faction)) return false;
+    if (!t) return false;
+    let type = t, lo = null;
+    if (TEMPLATES[t] || t === 'rekrut') { lo = t === 'rekrut' ? g.defaultLoadout(owner, t) : templateLoadout(t, (id) => g.canUse(owner, id), Math.max(700, (p.credits - reserve) * 0.3)); if (!lo) return false; type = t === 'rekrut' ? 'rekrut' : roleOf(lo); }
+    const d = UNITS[type]; if (!d || d.noBuy) return false;
+    if (d.cat === 'inf' ? inf.length + bought >= 22 && type !== 'pionier' : units.length + bought >= 32) return false;
     const at = d.cat === 'inf' && spzFwd ? 'spz' : 'hq';
-    if (!d.free && p.credits - g.unitCost(owner, t) < reserve) return false;
-    const ev = g.buy(owner, t, at) || (at === 'spz' ? g.buy(owner, t, 'hq') : null);
+    if (!d.free && p.credits - g.unitCost(owner, type, lo) < reserve) return false;
+    const ev = g.buy(owner, type, at, lo) || (at === 'spz' ? g.buy(owner, type, 'hq', lo) : null);
     if (ev) { evs.push(ev); bought++; return true; }
     return false;
   };
   for (const t of wish) { if (bought >= 4) break; tryBuy(t); }
-  for (let k = 0; bought < 5 && k < 12 && p.credits > reserve + 1200 && units.length + bought < 22; k++) if (!tryBuy(filler[(g.round + k) % filler.length])) break;
+  for (let k = 0; bought < 5 && k < 12 && p.credits > reserve + 1200 && units.length + bought < 24; k++) if (!tryBuy(filler[(g.round + k) % filler.length])) break;
   tryBuy('rekrut');
   for (const ev of evs) await act.act(ev);
 }
