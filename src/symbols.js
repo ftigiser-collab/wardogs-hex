@@ -37,6 +37,8 @@ export function drawUnitSymbol(ctx, g, u, x, y, s) {
   if (u.def.cat === 'inf') {
     if (u.downed) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col; ctx.fillRect(-1.6, -6, 3.2, 12); ctx.fillRect(-6, -1.6, 12, 3.2); ctx.restore(); return; }
     arrow(ctx, x, y, u.facing || 0, s, col);
+    const ab = { rekrut: 'RK', schuetze: 'ST', sani: 'SAN', pionier: 'PIO', spaeher: 'SP', mgtrupp: 'MG' }[u.type] || (u.def.gun === 'verba' ? 'AA' : u.type === 'panzerjaeger' ? 'AT' : '');
+    if (ab) label(ctx, x + 12 * s, y + 9 * s, ab, s * 0.75, '#fff');
     return;
   }
   const kind = u.def.mt === 'air' ? 'air' : u.def.mt === 'track' ? 'track' : 'wheel';

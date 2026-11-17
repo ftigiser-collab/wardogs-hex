@@ -11,8 +11,14 @@ export function drawUnit(ctx, u, x, y, color, t, o = {}) {
   ctx.save();
   ctx.translate(x, y);
   if (o.ring) {
-    ctx.fillStyle = rgba(color, 0.22); ctx.strokeStyle = rgba(color, 0.75); ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.ellipse(0, 4, 27, 16, 0, 0, 6.28); ctx.fill(); ctx.stroke();
+    // deutliche Teammarkierung: dunkler Rand, kräftiger Teamring, gefüllter Sockel
+    ctx.beginPath(); ctx.ellipse(0, 4, 27, 16, 0, 0, 6.28);
+    ctx.fillStyle = rgba(color, 0.38); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4.5; ctx.stroke();
+    ctx.strokeStyle = rgba(color, 1); ctx.lineWidth = 2.4; ctx.stroke();
+    // Teamwimpel unten am Ring
+    ctx.fillStyle = color; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-5, 19); ctx.lineTo(5, 19); ctx.lineTo(0, 25); ctx.closePath(); ctx.fill(); ctx.stroke();
   }
   ctx.scale(o.scale || 1.62, o.scale || 1.62);
   if (u.downed) { downed(ctx, u, color, t); ctx.restore(); return; }

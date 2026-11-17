@@ -22,6 +22,7 @@
     <div class="stat"><span class="lbl">Runde</span><b id="round">1</b></div>
     <div class="stat cash"><span class="lbl">Kasse</span><b id="credits">$0</b></div>
     <div class="stat dt"><span class="lbl">Wetter</span><b id="daytime">Klar</b></div>
+    <button id="xpbtn" class="stat xp" title="Erfahrung und Stufen"><span class="lbl">Wardog</span><b id="xplvl">★ 0</b></button>
     <div id="score"></div>
     <div id="code" class="stat"></div>
     <div id="control"></div>
@@ -37,6 +38,8 @@
 
   <canvas id="minimap" width="220" height="140"></canvas>
   <div id="tacmap" class="hidden"><canvas></canvas><details class="tm-legend" open><summary>Legende</summary><span><i class="lg-cz"></i>CZ = Control Zone</span><span><i class="lg-hz"></i>HZ = Hot Zone (doppelte Punkte)</span><span>▲ eigene Trupps · Farbe = Fraktion</span><span>[n/m] = Sitze belegt/gesamt</span><span>◆ Zahl = Bohrturm, Treibstoff</span><span>A–D = Funktürme</span><span>🛒 = HQ (Laden) · ⚑ = FOB</span><em>Tippen: dorthin springen · M/Esc: schließen</em></details><button class="tm-close">×</button></div>
+  <div id="xptoasts"></div>
+  <div id="xppanel" class="hidden"></div>
   <div id="zoom"><button id="zoomin">+</button><button id="zoomout">−</button></div>
   <div id="seedinfo"></div>
   <div id="log"></div>
@@ -85,7 +88,7 @@
       <h3>Loadout, Stufen und Waffenkammer</h3>
       <ul>
         <li><b>Infanterie per Loadout:</b> Im HQ eine Vorlage antippen (Sturm, Sanitäter, Pionier, Späher, MG-Schütze, Panzer- oder Fliegerabwehr), dann Waffe, bis zu 2 Ausrüstungsteile und Weste wählen. Die Rolle ergibt sich daraus: Hammer = Pionier, Reanimator/Defi/Sanitätstasche = Sanitäter, Scharfschützengewehr = Späher, LMG = MG-Schütze, RPG/MAAWS/Verba/MGL = Panzerabwehr.</li>
-        <li><b>Sechs Spuren:</b> Sturm, Sanität, Aufklärung, Unterstützung, Fahrer, Pilot. Eure Trupps sammeln im Einsatz Erfahrungspunkte (XP) in der passenden Spur — Kämpfen, Hacken und Zone halten, Heilen und Wiederbeleben, Markieren, Bauen und Reparieren, Fahren, Fliegen und Liefern. Nach dem Einsatz landen die XP auf eurem Konto (Sieg ×1,25). Die Wardog-Stufe ist die Summe aller Spuren, an ihr hängen die Westen.</li>
+        <li><b>Sechs Spuren:</b> Sturm, Sanität, Aufklärung, Unterstützung, Fahrer, Pilot. Eure Trupps sammeln im Einsatz Erfahrungspunkte (XP) in der passenden Spur — Kämpfen, Hacken und Zone halten, Heilen und Wiederbeleben, Markieren, Bauen und Reparieren, Fahren, Fliegen und Liefern. Im Einsatz zeigt <b>★</b> oben die Wardog-Stufe live; jede Erfahrung erscheint kurz als „+XP“, ein Stufenaufstieg groß. Antippen von ★ zeigt alle Spuren mit Fortschritt. Nach dem Einsatz landen die XP auf eurem Konto (Sieg ×1,25). Die Wardog-Stufe ist die Summe aller Spuren, an ihr hängen die Westen.</li>
         <li><b>Waffenkammer</b> (Hauptmenü): Hat eine Spur die nötige Stufe erreicht, schaltet ihr Waffen, Ausrüstung und Fahrzeuge einmalig gegen Gebühr vom Konto frei. Gratis von Anfang an: KH-2002, A-91, AMP-9, MP43, Scout Rifle, Verbandpäckchen, Kleiner Hammer, Bobcat, Kodiak, MH-6.</li>
         <li><b>Gegner</b> rüsten sich je nach Schwierigkeit bis Stufe 10, 22 oder 35 aus.</li>
         <li><b>Ausrüstung im Einsatz:</b> C4 (Fahrzeug oder Bauwerk daneben; HESCO-Block fällt nach 2, HESCO-Wall nach 4, Bremer nach 7 Ladungen), Molotow (Feld in Reichweite 2, 40 gegen Infanterie), Rauch (Feld in Reichweite 2: bis zu eurem nächsten Zug nur aus nächster Nähe zu treffen), Entfernungsmesser (Feind markieren: +20 % Schaden), Claymore und Panzermine (versteckt auf ein Nachbarfeld), Ghillie-Anzug (getarnt, solange still). Am HQ füllt sich alles wieder auf.</li>
@@ -96,7 +99,7 @@
         <li><b>Munitionswahl:</b> Handwaffen schießen FMJ (Allround), HP (+25 % gegen Infanterie, schwach gegen Panzerung) oder AP (stark gegen Fahrzeuge und Hubschrauber). Umschalten kostet nichts.</li>
         <li><b>Verwundet statt tot:</b> Infanterie auf 0 geht zu Boden und verblutet nach 2 eigenen Rundenstarts. Ein Sanitäter daneben belebt wieder. Ein weiterer Treffer erledigt den Verwundeten (Abschuss bestätigt).</li>
         <li><b>Plätze (Trupps):</b> MH-6 3, Lakota 5 (mit Miniguns 3), Kodiak, Wolf, Pickup, Humvee 3, Ural 4, bewaffnete Varianten meist 2, M113 3.</li>
-        <li><b>Transport:</b> Trupp neben das Fahrzeug stellen, „Einsteigen“, fahren, „Aussteigen“ — ausgestiegene Trupps können sofort angreifen. Wird das Fahrzeug zerstört, sterben die Insassen.</li>
+        <li><b>Transport:</b> Trupp wählen und das eigene Fahrzeug antippen — er läuft daneben und steigt ein (auch nach einer Bewegung). Oder neben das Fahrzeug stellen und „Einsteigen“, fahren, „Aussteigen“ — ausgestiegene Trupps können sofort angreifen. Wird das Fahrzeug zerstört, sterben die Insassen.</li>
         <li><b>Hubschrauber</b> nehmen Trupps nur <b>gelandet</b> auf und lassen sie nur gelandet aussteigen. Landen kostet die Bewegung, gestartet wird erst in der nächsten Runde — so lange steht der Hubschrauber verwundbar am Boden. Alternativ: <b>Fallschirmabsprung</b> aus der Luft (Fallschirm im Loadout, $50, Einweg). Der Landepunkt ist zufällig auf einem Feld daneben, die Springer hängen bis zu eurer nächsten Runde wehrlos am Schirm (+50 % Schaden, zählen nicht als Kopf). Wer heil unten ankommt, bringt in der Zone $500 (HZ $1.000) Überlebensprämie, dazu $250 je Absprung in die Zone.</li>
         <li><b>Pendelfahrten:</b> Wer mit demselben Fahrzeug immer wieder in die Zone liefert (Trupps, Paletten, Kisten), bekommt je Fahrt in Folge $200 mehr, bis zu 10 Fahrten.</li>
         <li><b>Versorgungskiste</b> ($300): überall abwerfbar, auch aus der Luft. Trupps daneben werden 3 Runden lang zu Rundenbeginn um 20 verbunden und füllen Granaten, Minen, C4 und Rucksack auf. Abwurf in der Zone bringt Prämie.</li>

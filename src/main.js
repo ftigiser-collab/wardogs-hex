@@ -139,8 +139,8 @@ async function start(save, test = false) {
     const k = readKonto();
     const konto = !test && opts.cash !== 'fest';
     const cfg = test
-      ? { diff: DIFFICULTY.normal, factions, target: TARGETS.normal, playerCash: 30000, unlocked: catalog().map((it) => it.id), levels: Object.fromEntries(TRACK_KEYS.map((t) => [t, 35])), aiLevel: AI_LEVEL.normal, rookie: false }
-      : { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH, unlocked: k.unlocked, levels: levelsOf(k), aiLevel: AI_LEVEL[opts.diff] ?? 18, rookie: wardogLevel(k) < 9 };
+      ? { diff: DIFFICULTY.normal, factions, target: TARGETS.normal, playerCash: 30000, unlocked: catalog().map((it) => it.id), levels: Object.fromEntries(TRACK_KEYS.map((t) => [t, 35])), aiLevel: AI_LEVEL.normal, rookie: false, baseXp: Object.fromEntries(TRACK_KEYS.map((t) => [t, xpForLevel(35)])) }
+      : { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH, unlocked: k.unlocked, levels: levelsOf(k), aiLevel: AI_LEVEL[opts.diff] ?? 18, rookie: wardogLevel(k) < 9, baseXp: { ...k.xp } };
     game = new Game(map, cfg);
     game.diffName = test ? 'normal' : opts.diff; game.settings = { ...opts, ...(test ? { test: true, diff: 'normal', target: 'normal', auto: opts.auto || 'an' } : {}) }; game.konto = konto;
     game.setup();

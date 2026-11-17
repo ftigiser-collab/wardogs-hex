@@ -31,7 +31,7 @@ export class Game {
     // Zonen
     const cz = map.cz;
     this.cz = { c: cz.c, r: cz.r, rad: cz.rad };
-    this.hz = { c: cz.c, r: cz.r, rad: cz.rad >= 6 ? 2 : 1, dir: Math.floor(this.rnd() * 6), lock: 0, lockTower: -1 };
+    this.hz = { c: cz.c, r: cz.r, rad: cz.rad >= 5 ? 2 : 1, dir: Math.floor(this.rnd() * 6), lock: 0, lockTower: -1 };
     this.hz.next = this.hzStep();
     // Funktürme mit je einer Codeziffer (Code bleibt die ganze Partie gleich)
     this.towers = (map.towers || []).map((t, i) => ({ i, c: t.c, r: t.r, digit: Math.floor(this.rnd() * 10), owner: -1, cd: 0 }));
@@ -39,6 +39,7 @@ export class Game {
     this.codeUses = 0;
     this.mines = []; this.smoke = [];
     this.xp = Object.fromEntries(TRACK_KEYS.map((k) => [k, 0]));
+    this.baseXp = { ...(opts.baseXp || {}) };
     // Freischaltungen: Spieler aus dem Konto, KI nach Schwierigkeit
     const unl = opts.unlocked || []; this.rookie = !!opts.rookie;
     for (const p of this.players) { p.unlocked = p.id === 0 ? [...unl] : []; p.aiLevel = p.id === 0 ? null : (opts.aiLevel ?? 18); p.levels = p.id === 0 ? (opts.levels || {}) : null; }
@@ -54,7 +55,13 @@ export class Game {
   }
   loadoutOk(o, lo) { return !!lo && (lo.free || (GUNS[lo.gun] && this.canUse(o, lo.gun) && (lo.gear || []).length <= 2 && (lo.gear || []).every((k) => GEAR[k] && this.canUse(o, k)) && this.canUse(o, lo.vest || 'keine'))); }
   defaultLoadout(o, role) { if (role === 'rekrut') return { free: true, gun: 'kh2002', gear: ['verband'] }; return templateLoadout(role, (id) => this.canUse(o, id)); }
-  addXp(o, track, n) { if (o !== 0 || !track || !(n > 0)) return; this.xp[track] = (this.xp[track] || 0) + Math.round(n); }
+  addXp(o, track, n) {
+    if (o !== 0 || !track || !(n > 0)) return;
+    const before = levelOf((this.baseXp[track] || 0) + (this.xp[track] || 0));
+    this.xp[track] = (this.xp[track] || 0) + Math.round(n);
+    const after = levelOf((this.baseXp[track] || 0) + this.xp[track]);
+    (this.xpQueue = this.xpQueue || []).push({ track, n: Math.round(n), up: after > before ? after : 0 });
+  }
   trackOf(e) { if (e.isBuilding) return 'support'; return e.def.mt === 'air' ? 'pilot' : e.def.cat === 'veh' ? (e.def.weapon === 'artillery' ? 'support' : 'driver') : e.def.track; }
   mkPlayer(id, faction) {
     const F = FACTIONS[faction];
@@ -1139,7 +1146,7 @@ export class Game {
     const strip = (o) => { const c = { ...o }; for (const k of ['def', 'vis', 'anim', 'gone', 'hitFlash', 'recoil', 'forceShow', 'crashing', 'aimUntil', 'z', 'bank', 'mineEv', 'firing']) delete c[k]; return c; };
     return JSON.stringify({ v: 1, W: this.W, H: this.H, seed: this.map.seed, ter: this.map.ter, round: this.round, current: this.current, target: this.target, spzUnlocked: this.spzUnlocked,
       players: this.players, units: this.units.filter((u) => !u.dead).map(strip), buildings: this.buildings.filter((b) => !b.dead).map(strip),
-      coalition: this.coalition ?? -1, cz: this.cz, hz: this.hz, towers: this.towers, known: this.known.map((s) => [...s]), codeUses: this.codeUses, discovered: [...this.discovered], mines: this.mines, smoke: this.smoke, xp: this.xp,
+      coalition: this.coalition ?? -1, baseXp: this.baseXp, cz: this.cz, hz: this.hz, towers: this.towers, known: this.known.map((s) => [...s]), codeUses: this.codeUses, discovered: [...this.discovered], mines: this.mines, smoke: this.smoke, xp: this.xp,
       diffName: this.diffName, settings: this.settings || null, konto: !!this.konto, rookie: !!this.rookie, weather: this.weather || 'klar', weatherT: this.weatherT || 0 });
   }
   static restore(map, data, diff) {
@@ -1149,7 +1156,7 @@ export class Game {
     g.spzUnlocked = data.spzUnlocked;
     g.players = data.players.map((p) => ({ ...p, perk: FACTIONS[p.faction].perk || {} }));
     g.units = data.units.map((u) => ({ ...u, def: u.lo ? infDef(u.lo) : u.landed ? g.landedDef(u.type) : UNITS[u.type] }));
-    g.coalition = data.coalition ?? -1; g.mines = data.mines || []; g.smoke = data.smoke || []; g.xp = { ...g.xp, ...(data.xp || {}) };
+    g.coalition = data.coalition ?? -1; g.baseXp = data.baseXp || {}; g.mines = data.mines || []; g.smoke = data.smoke || []; g.xp = { ...g.xp, ...(data.xp || {}) };
     g.buildings = data.buildings.map((b) => ({ ...b, def: BUILDINGS[b.type], rise: 1 }));
     g.cz = data.cz; g.hz = data.hz; g.towers = data.towers; g.known = data.known.map((a) => new Set(a)); g.codeUses = data.codeUses;
     g.discovered = new Set(data.discovered || []);

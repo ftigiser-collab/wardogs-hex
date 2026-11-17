@@ -1,6 +1,6 @@
 // Steuerung: Eingabe, Auswahl, Menüs, Animationen, Rundenablauf — Hundemarke
 import { drawSymbolLayer } from './symbols.js';
-import { UNITS, BUILDINGS, WEAPONS, TERRAIN, MOVE_COST, FACTIONS, ARMOR_MOD, RANKS, AMMO, AMMO_ORDER, PALLETS, BUILD_LIST, PAY, CODE_USES, TRACKS, GUNS, GEAR, VESTS, TEMPLATES, infDef, loadoutCost, roleOf, HAMMER_NAME, CHUTE_PRICE } from './data.js';
+import { UNITS, BUILDINGS, WEAPONS, TERRAIN, MOVE_COST, FACTIONS, ARMOR_MOD, RANKS, AMMO, AMMO_ORDER, PALLETS, BUILD_LIST, PAY, CODE_USES, TRACKS, GUNS, GEAR, VESTS, TEMPLATES, infDef, loadoutCost, roleOf, HAMMER_NAME, CHUTE_PRICE, TRACK_KEYS, levelOf, xpForLevel } from './data.js';
 import { center, pixelToHex, distance, R, ring } from './hex.js';
 import { icon } from './sprites.js';
 import { angDiff } from './util.js';
@@ -46,6 +46,7 @@ export class Controller {
     this.tweens = keep;
     this.r.projectiles = this.projectiles;
     this.updateLog();
+    if (this.g.xpQueue && this.g.xpQueue.length) this.drainXp();
     if (this.tmOpen) { this.tmT = (this.tmT || 0) - dt; if (this.tmT <= 0) { this.tmT = 0.05; this.drawTacmap(); } }
     this.minimapT = (this.minimapT || 0) - dt;
     if (this.minimapT <= 0) { this.minimapT = 0.25; this.drawMinimap(); }
@@ -595,6 +596,18 @@ export class Controller {
       }
     }
     if (this.mode === 'confirm') { this.mode = this.prevMode; this.select(this.sel); if (!enemyAt.length && !ownAt.length) return; }
+    // Infanterie gewählt, eigenes Fahrzeug angetippt: einsteigen (vorher daneben laufen, wenn nötig)
+    if (sel && g.isFootInf(sel) && !sel.acted && (this.mode === 'unit' || this.mode === 'moved')) {
+      const apc = ownAt.find((a) => a !== sel && a.def.transport && (a.passengers || []).length < a.def.transport && !(a.cargoP || []).length);
+      if (apc) {
+        if (g.canBoard(apc, sel)) { this.busy = true; await this.animBoard(apc, sel); this.busy = false; this.deselect(); this.refresh(); return; }
+        if (this.mode === 'unit' && this.reach && (UNITS[apc.type].mt !== 'air' || apc.landed)) {
+          let best = null; for (const n of this.reach.values()) if (n.end && distance(n.c, n.r, apc.c, apc.r) === 1 && !g.unitAt(n.c, n.r, false) && (!best || n.cost < best.cost)) best = n;
+          if (best) { const u = sel; await this.moveSelected(best.c, best.r); if (!u.dead && g.canBoard(apc, u)) { this.busy = true; await this.animBoard(apc, u); this.busy = false; this.deselect(); this.refresh(); } return; }
+        }
+        if (UNITS[apc.type].mt === 'air' && !apc.landed) { this.flash('Der Hubschrauber muss erst landen'); return; }
+      }
+    }
     if (sel && this.mode === 'unit' && !ownAt.includes(sel)) {
       const n = this.reach.get(i);
       if (n && n.end && !(enemyAt.length)) { await this.moveSelected(c, r); return; }
@@ -628,7 +641,11 @@ export class Controller {
     if (u.def.medic && (g.reviveTargets(u).length || g.healTargets(u).length)) return true;
     if (g.canHack(u) || g.canEnterCode(u) || g.canHackFob(u)) return true;
     if ((u.passengers || []).length && g.unloadHexes(u).length) return true;
-    if (g.canDropPallets(u) || g.canLoadPallet(u)) return true;
+    if (g.canDropPallets(u) || g.canLoadPallet(u) || g.canDropCrate(u)) return true;
+    if (g.isFootInf(u) && g.units.some((a) => g.canBoard(a, u))) return true;
+    if (u.def.transport && g.units.some((t) => g.canBoard(u, t))) return true;
+    if (g.canMark(u) || g.takeoverTargets(u).length || g.canParadrop(u) || g.canLand(u)) return true;
+    if (u.gearUses && !u.attacked && ['c4', 'molotow', 'rauch'].some((k) => g.gearLeft(u, k) > 0 && (k !== 'c4' || g.c4Targets(u).length))) return true;
     if (u.def.transport && g.units.some((t) => g.canBoard(u, t))) return true;
     if (g.canLand(u)) return true;
     return false;
@@ -893,6 +910,7 @@ export class Controller {
     $('#hqbtn').onclick = () => { const hq = this.g.hqOf(0); if (hq) { this.select(hq); const p = center(hq.c, hq.r); this.r.centerOn(p.x, p.y); } };
     $('#zonebtn').onclick = () => { const p = center(this.g.hz.c, this.g.hz.r); this.r.centerOn(p.x, p.y); };
     $('#mapbtn').onclick = () => this.toggleTacmap();
+    $('#xpbtn').onclick = () => { const p = $('#xppanel'); if (p.classList.contains('hidden')) this.showXpPanel(); else p.classList.add('hidden'); };
     $('#tacmap .tm-close').onclick = () => this.toggleTacmap(false);
     $('#tacmap canvas').addEventListener('pointerdown', (e) => {
       const tm = this.tm; if (!tm) return;
@@ -908,6 +926,36 @@ export class Controller {
     };
     mm.addEventListener('pointerdown', (e) => { mmGo(e); mm.setPointerCapture(e.pointerId); mm.onpointermove = mmGo; });
     mm.addEventListener('pointerup', () => { mm.onpointermove = null; });
+  }
+
+  // ---------- Erfahrung: Anzeige im Einsatz ----------
+  liveLevels() { const g = this.g; return Object.fromEntries(TRACK_KEYS.map((t) => { const x = (g.baseXp?.[t] || 0) + (g.xp[t] || 0); return [t, { x, L: levelOf(x), gain: g.xp[t] || 0 }]; })); }
+  drainXp() {
+    const q = this.g.xpQueue.splice(0), box = $('#xptoasts'); if (!box) return;
+    // gleiche Spur zusammenfassen
+    const sum = {}; for (const e of q) { sum[e.track] = sum[e.track] || { n: 0, up: 0 }; sum[e.track].n += e.n; sum[e.track].up = Math.max(sum[e.track].up, e.up); }
+    for (const [t, v] of Object.entries(sum)) {
+      const el = document.createElement('div'); el.className = 'xpt' + (v.up ? ' up' : '');
+      el.innerHTML = v.up ? `<b>${TRACKS[t].icon} ${TRACKS[t].name}: Stufe ${v.up}!</b><span>+${v.n} XP · neue Teile nach dem Einsatz in der Waffenkammer</span>` : `${TRACKS[t].icon} +${v.n} XP <i>${TRACKS[t].name}</i>`;
+      box.appendChild(el); setTimeout(() => el.classList.add('out'), v.up ? 4200 : 1900); setTimeout(() => el.remove(), v.up ? 4800 : 2500);
+      while (box.children.length > 5) box.firstChild.remove();
+    }
+    this.refreshXp(true);
+  }
+  refreshXp(pulse) {
+    const lv = this.liveLevels(), el = $('#xplvl'); if (!el) return;
+    el.textContent = `★ ${TRACK_KEYS.reduce((a, t) => a + lv[t].L, 0)}`;
+    if (pulse) { const b = $('#xpbtn'); b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse'); }
+    if (!$('#xppanel').classList.contains('hidden')) this.showXpPanel();
+  }
+  showXpPanel() {
+    const lv = this.liveLevels(), p = $('#xppanel');
+    const how = { assault: 'Kämpfen, Abschüsse, Hacken, Code, Zone halten', medic: 'Wiederbeleben, Verbinden, Rauch', recon: 'Markieren, Assists, Späher-Abschüsse', support: 'Bauen, Hämmern, Reparieren, FOB, Artillerie', driver: 'Fahren, Transport, Paletten, Pendelfahrten', pilot: 'Fliegen, Absetzen, Fallschirm, Lieferungen' };
+    p.innerHTML = `<div class="xp-head"><b>Erfahrung</b><button class="xp-x">×</button></div>
+      ${TRACK_KEYS.map((t) => { const v = lv[t], a = xpForLevel(v.L), b = xpForLevel(v.L + 1), pc = Math.round((v.x - a) / (b - a) * 100); return `<div class="xp-row"><div class="xp-top"><span>${TRACKS[t].icon} <b>${TRACKS[t].name}</b> · Stufe ${v.L}</span><em>${v.gain ? `+${v.gain} heute` : ''}</em></div><div class="xp-bar"><u style="width:${pc}%"></u></div><div class="xp-how">${how[t]} · noch ${b - v.x} XP bis Stufe ${v.L + 1}</div></div>`; }).join('')}
+      <div class="xp-note">XP sammelt jede eigene Einheit in ihrer Spur. Nach dem Einsatz landen sie auf dem Konto (Sieg ×1,25); neue Waffen, Ausrüstung und Fahrzeuge schaltet ihr dann im Hauptmenü unter <b>Waffenkammer</b> frei.</div>`;
+    p.classList.remove('hidden');
+    p.querySelector('.xp-x').onclick = () => p.classList.add('hidden');
   }
 
   // ---------- Taktikkarte im Wardogs-Stil ----------
@@ -941,6 +989,7 @@ export class Controller {
 
   refresh() {
     const g = this.g, p = g.players[0];
+    this.refreshXp(false);
     $('#round').textContent = g.round;
     const tz = $('#daytime'); if (tz) { tz.textContent = g.weather === 'regen' ? `Regen (${g.weatherT || 1})` : 'Klar'; tz.parentElement.classList.toggle('night', g.weather === 'regen'); }
     $('#credits').textContent = money(p.credits);
@@ -1369,8 +1418,8 @@ export class Controller {
     if (a === 'buildall') { this.showAllBuild = !this.showAllBuild; this.showPanel(e, true); return; }
     if (a === 'pickbuild') {
       if (!g.canBuild(e, t)) { this.showInfo('bld', t, e); return; }
-      this.buildType = t; this.clearHL(); this.r.hl.sel = e; this.mode = 'build'; this.r.hl.build = g.buildHexes(e, t);
-      this.showInfo('bld', t, e); this.flash(`${BUILDINGS[t].name}: grünes Feld antippen`); return;
+      this.buildType = t; this.buildOpen = false; this.clearHL(); this.r.hl.sel = e; this.mode = 'build'; this.r.hl.build = g.buildHexes(e, t);
+      this.showPanel(e, true); this.flash(`${BUILDINGS[t].name}: grünes Feld antippen (Abbrechen: Einheit erneut antippen)`); return;
     }
     if (a === 'hammer') { const ts = g.hammerTargets(e); if (ts.length === 1) { this.busy = true; await this.doAct(g.hammer(e, ts[0])); this.busy = false; this.deselect(); return; } this.targetMode('hammer', e, ts.map((x) => [x.c, x.r]), 'Baustelle antippen'); return; }
     if (a === 'repair') { this.targetMode('repair', e, g.repairTargets(e).map((x) => [x.c, x.r]), 'Fahrzeug oder Bauwerk antippen'); return; }
