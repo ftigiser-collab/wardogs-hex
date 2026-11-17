@@ -12,15 +12,16 @@ export const FACTIONS = {
 export const FAC_KEYS = ['ironstar', 'volkhova', 'simurgh'];
 
 export const TERRAIN = {
-  feld:     { name: 'Feld',        def: 0,    build: true },
-  wald:     { name: 'Wald',        def: 0.25, build: true, cover: true },
-  ort:      { name: 'Ortschaft',   def: 0.35, build: true, cover: true, town: true },
-  truemmer: { name: 'Trümmer',     def: 0.2,  build: true },
-  huegel:   { name: 'Hügel',       def: 0.15, build: true, sight: 1 },
-  fels:     { name: 'Felsgrat',    def: 0.35, build: false, sight: 1 },
-  wasser:   { name: 'Fluss',       def: 0,    build: false, water: true },
-  strasse:  { name: 'Straße',      def: 0,    build: true, road: true },
-  bruecke:  { name: 'Brücke',      def: 0,    build: false, road: true },
+  // def = Deckung (Anteil weniger Schaden, negativ = ungeschützt), sight = Sicht, range = Reichweite für Fernkämpfer, hide = Infanterie nur aus der Nähe zu sehen
+  feld:     { name: 'Feld',        def: 0,     build: true },
+  wald:     { name: 'Wald',        def: 0.4,   build: true, cover: true, hide: 2, sight: -1 },
+  ort:      { name: 'Ortschaft',   def: 0.5,   build: true, cover: true, town: true },
+  truemmer: { name: 'Trümmer',     def: 0.35,  build: true },
+  huegel:   { name: 'Hügel',       def: 0.2,   build: true, sight: 1, range: 1 },
+  fels:     { name: 'Felsgrat',    def: 0.45,  build: false, sight: 2, range: 1 },
+  wasser:   { name: 'Fluss',       def: 0,     build: false, water: true },
+  strasse:  { name: 'Straße',      def: -0.15, build: true, road: true },
+  bruecke:  { name: 'Brücke',      def: -0.25, build: false, road: true },
 };
 export const TER_IDS = Object.keys(TERRAIN);
 
@@ -123,7 +124,7 @@ for (const g of Object.values(GUNS)) {
 for (const [k, g] of Object.entries(GUNS)) WEAPONS['g_' + k] = g.w;
 // Einsatzpreise: Wardogs-Listenpreis halbiert (passt zur Zonenkasse)
 const half = (o) => { for (const it of Object.values(o)) it.price = Math.round(it.price * 0.5 / 50) * 50; };
-half(GUNS);
+half(GUNS); for (const it of Object.values(GUNS)) it.price = Math.round(it.price * 0.7 / 50) * 50;
 
 // ---------- Ausrüstung (bis zu 2 je Trupp) ----------
 export const GEAR = {
@@ -144,13 +145,13 @@ export const GEAR = {
   hammer_l:  { name: 'Großer Hammer', track: 'support', lvl: 8, price: 1600, hammer: 3, desc: 'Baut alles — Bunker, Aufklärungsturm, Bremer-Wand, Mörser, Stingray, SAM, CIWS, Stationen, Bohrturm — und schlägt doppelt so schnell.' },
   atmine:    { name: 'Panzermine', track: 'support', lvl: 25, price: 800, uses: 1, mine: 'veh', desc: 'Versteckte Mine auf ein Nachbarfeld: Feindliche Fahrzeuge erleiden 90 Schaden.' },
 };
-half(GEAR);
+half(GEAR); for (const it of Object.values(GEAR)) it.price = Math.round(it.price * 0.7 / 50) * 50;
 export const VESTS = {
   keine:  { name: 'Keine Weste', track: 'wardog', lvl: 0, price: 0, taken: 1, desc: 'Leicht und schnell.' },
   leicht: { name: 'Leichte Weste', track: 'wardog', lvl: 5, price: 300, taken: 0.88, desc: '−12 % erlittener Schaden.' },
   schwer: { name: 'Schwere Weste', track: 'wardog', lvl: 20, price: 900, taken: 0.75, move: -1, desc: '−25 % erlittener Schaden, 1 Bewegung weniger.' },
 };
-export const SQUAD_BASE = 300;   // Sold je Trupp, dazu Waffe, Ausrüstung, Weste
+export const SQUAD_BASE = 250;   // Sold je Trupp, dazu Waffe, Ausrüstung, Weste
 
 // Rolle (Bild und KI-Verhalten) ergibt sich aus der Ausrüstung
 half(VESTS);
@@ -220,32 +221,32 @@ export const UNITS = {
   mgtrupp: { name: 'MG-Trupp', cat: 'inf', move: 2, mt: 'foot', sight: 2, armor: 'inf', cost: 1800, track: 'support', desc: 'Treffer halten nieder: Das Ziel hat nächste Runde 1 Bewegung weniger.' },
   panzerjaeger: { name: 'Panzerabwehr', cat: 'inf', move: 2, mt: 'foot', sight: 2, armor: 'inf', cost: 2000, track: 'support', desc: 'Raketenwerfer gegen Fahrzeuge und tieffliegende Hubschrauber.' },
 
-  bobcat:  { name: 'Bobcat', cat: 'veh', move: 6, mt: 'wheel', sight: 2, armor: 'light', cost: 500, track: 'driver', lvl: 0, pallets: 1, tough: 1.15, desc: 'Winziges Nutzfahrzeug: billig, schnell, eine Palette auf der Ladefläche.' },
-  kodiak:  { name: 'Kodiak', cat: 'veh', move: 6, mt: 'wheel', sight: 3, armor: 'light', cost: 2500, track: 'driver', lvl: 0, transport: 1, desc: 'Schneller Geländewagen für einen Trupp. Auf Straßen doppelte Reichweite.' },
-  ural:    { name: 'URAL', cat: 'veh', move: 4, mt: 'wheel', sight: 2, armor: 'light', cost: 5000, track: 'driver', lvl: 3, transport: 1, pallets: 2, tough: 0.9, desc: 'Lastwagen: ein Trupp oder zwei Versorgungspaletten.' },
-  kodiak_m249: { name: 'Kodiak [M249]', cat: 'veh', move: 6, mt: 'wheel', sight: 3, armor: 'light', weapon: 'jeepmg', cost: 3750, track: 'driver', lvl: 6, transport: 1, desc: 'Kodiak mit M249 auf dem Dach.' },
-  wolf:    { name: 'Wolf-110', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', cost: 2800, track: 'driver', lvl: 8, transport: 1, tough: 0.85, desc: 'Robuster Geländewagen, steckt mehr weg als der Kodiak.' },
-  buggy:   { name: 'Dune Buggy', cat: 'veh', move: 8, mt: 'wheel', sight: 3, armor: 'light', cost: 1500, track: 'driver', lvl: 9, transport: 1, tough: 1.2, desc: 'Der schnellste Weg in die Zone — und der zerbrechlichste.' },
-  pickup:  { name: 'Kodiak [Pickup]', cat: 'veh', move: 6, mt: 'wheel', sight: 3, armor: 'light', cost: 3000, track: 'driver', lvl: 10, transport: 2, pallets: 1, desc: 'Pritschenwagen für zwei Trupps oder eine Palette.' },
-  humvee:  { name: 'Humvee', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', cost: 3000, track: 'driver', lvl: 14, transport: 1, tough: 0.8, desc: 'Gepanzerter Geländewagen.' },
-  ural_def: { name: 'Ural Defender', cat: 'veh', move: 4, mt: 'wheel', sight: 2, armor: 'light', cost: 6000, track: 'driver', lvl: 15, transport: 1, pallets: 2, tough: 0.7, desc: 'Gepanzerter URAL: Nachschub, der auch unter Feuer ankommt.' },
-  wolf_m2: { name: 'Wolf-110 [M2 Browning]', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', weapon: 'm2', cost: 4000, track: 'driver', lvl: 16, transport: 1, tough: 0.85, desc: 'Schweres .50-MG mit Reichweite 1–2.' },
-  t72:     { name: 'T-72B3', cat: 'veh', move: 4, mt: 'track', sight: 2, armor: 'heavy', weapon: 't72gun', cost: 9000, track: 'driver', lvl: 20, turret: true, tough: 0.85, armored: true, desc: 'Kampfpanzer mit 125-mm-Kanone.' },
-  ural_def_m249: { name: 'Ural Defender [M249]', cat: 'veh', move: 4, mt: 'wheel', sight: 2, armor: 'light', weapon: 'jeepmg', cost: 6750, track: 'driver', lvl: 22, transport: 1, pallets: 2, tough: 0.7, desc: 'Gepanzerter Lastwagen mit M249.' },
-  humvee_m249: { name: 'Humvee [M249]', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', weapon: 'jeepmg', cost: 3750, track: 'driver', lvl: 24, transport: 1, tough: 0.8, desc: 'Humvee mit M249.' },
-  gepard:  { name: 'Flakpanzer Gepard', cat: 'veh', move: 4, mt: 'track', sight: 3, armor: 'heavy', weapon: 'gepard', cost: 10000, track: 'driver', lvl: 25, turret: true, tough: 0.85, armored: true, desc: 'Zwillings-Flak mit Radar, Reichweite 1–3: holt jeden Hubschrauber, hilft auch gegen leichte Ziele.' },
-  humvee_mini: { name: 'Humvee [Minigun]', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', weapon: 'minigun', cost: 4500, track: 'driver', lvl: 30, transport: 1, tough: 0.8, desc: 'Minigun: zerfetzt Infanterie, hält nieder, holt Hubschrauber.' },
-  sph2:    { name: 'SPH-2', cat: 'veh', move: 3, mt: 'track', sight: 2, armor: 'light', weapon: 'artillery', cost: 8000, track: 'driver', lvl: 31, turret: true, armored: true, desc: 'Selbstfahrlafette: Reichweite 3–7, trifft Nachbarfelder mit, schießt Häuser zu Trümmern. Nicht ziehen und feuern in derselben Runde.' },
-  l2a6:    { name: 'L2A6', cat: 'veh', move: 4, mt: 'track', sight: 3, armor: 'heavy', weapon: 'l2a6gun', cost: 14000, track: 'driver', lvl: 35, turret: true, tough: 0.7, armored: true, desc: 'Schwerer Kampfpanzer, Kanone mit Reichweite 1–2.' },
-  spz:     { name: 'M113 APC SV', cat: 'veh', move: 4, mt: 'track', sight: 3, armor: 'light', weapon: 'spzmg', cost: 0, track: 'driver', transport: 2, spawnPoint: true, noBuy: true, tough: 0.85,
+  bobcat:  { name: 'Bobcat', cat: 'veh', move: 6, mt: 'wheel', sight: 2, armor: 'light', cost: 300, track: 'driver', lvl: 0, pallets: 1, tough: 1.15, desc: 'Winziges Nutzfahrzeug: billig, schnell, eine Palette auf der Ladefläche.' },
+  kodiak:  { name: 'Kodiak', cat: 'veh', move: 6, mt: 'wheel', sight: 3, armor: 'light', cost: 1500, track: 'driver', lvl: 0, transport: 3, desc: 'Schneller Geländewagen für einen Trupp. Auf Straßen doppelte Reichweite.' },
+  ural:    { name: 'URAL', cat: 'veh', move: 4, mt: 'wheel', sight: 2, armor: 'light', cost: 3000, track: 'driver', lvl: 3, transport: 4, pallets: 2, tough: 0.9, desc: 'Lastwagen: ein Trupp oder zwei Versorgungspaletten.' },
+  kodiak_m249: { name: 'Kodiak [M249]', cat: 'veh', move: 6, mt: 'wheel', sight: 3, armor: 'light', weapon: 'jeepmg', cost: 2250, track: 'driver', lvl: 6, transport: 2, desc: 'Kodiak mit M249 auf dem Dach.' },
+  wolf:    { name: 'Wolf-110', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', cost: 1700, track: 'driver', lvl: 8, transport: 3, tough: 0.85, desc: 'Robuster Geländewagen, steckt mehr weg als der Kodiak.' },
+  buggy:   { name: 'Dune Buggy', cat: 'veh', move: 8, mt: 'wheel', sight: 3, armor: 'light', cost: 900, track: 'driver', lvl: 9, transport: 2, tough: 1.2, desc: 'Der schnellste Weg in die Zone — und der zerbrechlichste.' },
+  pickup:  { name: 'Kodiak [Pickup]', cat: 'veh', move: 6, mt: 'wheel', sight: 3, armor: 'light', cost: 1800, track: 'driver', lvl: 10, transport: 3, pallets: 1, desc: 'Pritschenwagen für zwei Trupps oder eine Palette.' },
+  humvee:  { name: 'Humvee', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', cost: 1800, track: 'driver', lvl: 14, transport: 3, tough: 0.8, desc: 'Gepanzerter Geländewagen.' },
+  ural_def: { name: 'Ural Defender', cat: 'veh', move: 4, mt: 'wheel', sight: 2, armor: 'light', cost: 3600, track: 'driver', lvl: 15, transport: 4, pallets: 2, tough: 0.7, desc: 'Gepanzerter URAL: Nachschub, der auch unter Feuer ankommt.' },
+  wolf_m2: { name: 'Wolf-110 [M2 Browning]', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', weapon: 'm2', cost: 2400, track: 'driver', lvl: 16, transport: 2, tough: 0.85, desc: 'Schweres .50-MG mit Reichweite 1–2.' },
+  t72:     { name: 'T-72B3', cat: 'veh', move: 4, mt: 'track', sight: 2, armor: 'heavy', weapon: 't72gun', cost: 5400, track: 'driver', lvl: 20, turret: true, tough: 0.85, armored: true, desc: 'Kampfpanzer mit 125-mm-Kanone.' },
+  ural_def_m249: { name: 'Ural Defender [M249]', cat: 'veh', move: 4, mt: 'wheel', sight: 2, armor: 'light', weapon: 'jeepmg', cost: 4050, track: 'driver', lvl: 22, transport: 3, pallets: 2, tough: 0.7, desc: 'Gepanzerter Lastwagen mit M249.' },
+  humvee_m249: { name: 'Humvee [M249]', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', weapon: 'jeepmg', cost: 2250, track: 'driver', lvl: 24, transport: 2, tough: 0.8, desc: 'Humvee mit M249.' },
+  gepard:  { name: 'Flakpanzer Gepard', cat: 'veh', move: 4, mt: 'track', sight: 3, armor: 'heavy', weapon: 'gepard', cost: 6000, track: 'driver', lvl: 25, turret: true, tough: 0.85, armored: true, desc: 'Zwillings-Flak mit Radar, Reichweite 1–3: holt jeden Hubschrauber, hilft auch gegen leichte Ziele.' },
+  humvee_mini: { name: 'Humvee [Minigun]', cat: 'veh', move: 5, mt: 'wheel', sight: 3, armor: 'light', weapon: 'minigun', cost: 2700, track: 'driver', lvl: 30, transport: 2, tough: 0.8, desc: 'Minigun: zerfetzt Infanterie, hält nieder, holt Hubschrauber.' },
+  sph2:    { name: 'SPH-2', cat: 'veh', move: 3, mt: 'track', sight: 2, armor: 'light', weapon: 'artillery', cost: 4800, track: 'driver', lvl: 31, turret: true, armored: true, desc: 'Selbstfahrlafette: Reichweite 3–7, trifft Nachbarfelder mit, schießt Häuser zu Trümmern. Nicht ziehen und feuern in derselben Runde.' },
+  l2a6:    { name: 'L2A6', cat: 'veh', move: 4, mt: 'track', sight: 3, armor: 'heavy', weapon: 'l2a6gun', cost: 8400, track: 'driver', lvl: 35, turret: true, tough: 0.7, armored: true, desc: 'Schwerer Kampfpanzer, Kanone mit Reichweite 1–2.' },
+  spz:     { name: 'M113 APC SV', cat: 'veh', move: 4, mt: 'track', sight: 3, armor: 'light', weapon: 'spzmg', cost: 0, track: 'driver', transport: 3, spawnPoint: true, noBuy: true, tough: 0.85,
              desc: 'Spawn-Fahrzeug mit Satellitenschüssel: Neue Infanterie wird direkt an ihm eingesetzt. Unter 50 % fällt die Schüssel aus, bis ein Pionier repariert.' },
 
-  mh6:     { name: 'MH-6', cat: 'air', move: 10, mt: 'air', sight: 4, armor: 'air', cost: 6250, track: 'pilot', lvl: 0, transport: 1, pallets: 1, desc: 'Little Bird mit Außensitzen: ein Trupp oder eine Palette, überall hin.' },
-  ah6m:    { name: 'AH-6M [Miniguns]', cat: 'air', move: 10, mt: 'air', sight: 4, armor: 'air', weapon: 'minigun', cost: 7000, track: 'pilot', lvl: 8, desc: 'Bewaffneter Little Bird mit zwei Miniguns.' },
-  lakota:  { name: 'Z20 Lakota', cat: 'air', move: 9, mt: 'air', sight: 3, armor: 'air', cost: 7400, track: 'pilot', lvl: 10, transport: 3, pallets: 2, tough: 0.9, desc: 'Transporthubschrauber für drei Trupps oder zwei Paletten.' },
-  ah6r:    { name: 'AH-6R [Rockets]', cat: 'air', move: 10, mt: 'air', sight: 4, armor: 'air', weapon: 'rockets', ammo: 4, cost: 12500, track: 'pilot', lvl: 20, flares: true, desc: 'Little Bird mit Raketen, Täuschkörper gegen eine SAM-Rakete pro Runde.' },
-  lakota_mini: { name: 'Z20 Lakota [Miniguns]', cat: 'air', move: 9, mt: 'air', sight: 3, armor: 'air', weapon: 'minigun', cost: 8000, track: 'pilot', lvl: 25, transport: 2, tough: 0.9, desc: 'Lakota mit Türminiguns, Platz für zwei Trupps.' },
-  havoc:   { name: 'Havoc', cat: 'air', move: 9, mt: 'air', sight: 3, armor: 'air', weapon: 'havoc', ammo: 5, cost: 18000, track: 'pilot', lvl: 35, tough: 0.7, flares: true, desc: 'Schwerer Kampfhubschrauber: Raketen und Kanone, dicke Panzerung, Täuschkörper.' },
+  mh6:     { name: 'MH-6', cat: 'air', move: 10, mt: 'air', sight: 4, armor: 'air', cost: 3750, track: 'pilot', lvl: 0, transport: 3, pallets: 1, desc: 'Little Bird mit Außensitzen: ein Trupp oder eine Palette, überall hin.' },
+  ah6m:    { name: 'AH-6M [Miniguns]', cat: 'air', move: 10, mt: 'air', sight: 4, armor: 'air', weapon: 'minigun', cost: 4200, track: 'pilot', lvl: 8, desc: 'Bewaffneter Little Bird mit zwei Miniguns.' },
+  lakota:  { name: 'Z20 Lakota', cat: 'air', move: 9, mt: 'air', sight: 3, armor: 'air', cost: 4450, track: 'pilot', lvl: 10, transport: 5, pallets: 2, tough: 0.9, desc: 'Transporthubschrauber für drei Trupps oder zwei Paletten.' },
+  ah6r:    { name: 'AH-6R [Rockets]', cat: 'air', move: 10, mt: 'air', sight: 4, armor: 'air', weapon: 'rockets', ammo: 4, cost: 7500, track: 'pilot', lvl: 20, flares: true, desc: 'Little Bird mit Raketen, Täuschkörper gegen eine SAM-Rakete pro Runde.' },
+  lakota_mini: { name: 'Z20 Lakota [Miniguns]', cat: 'air', move: 9, mt: 'air', sight: 3, armor: 'air', weapon: 'minigun', cost: 4800, track: 'pilot', lvl: 25, transport: 3, tough: 0.9, desc: 'Lakota mit Türminiguns, Platz für zwei Trupps.' },
+  havoc:   { name: 'Havoc', cat: 'air', move: 9, mt: 'air', sight: 3, armor: 'air', weapon: 'havoc', ammo: 5, cost: 10800, track: 'pilot', lvl: 35, tough: 0.7, flares: true, desc: 'Schwerer Kampfhubschrauber: Raketen und Kanone, dicke Panzerung, Täuschkörper.' },
 };
 for (const u of Object.values(UNITS)) u.sight = (u.sight || 1) + 1;
 
@@ -254,7 +255,7 @@ for (const u of Object.values(UNITS)) u.sight = (u.sight || 1) + 1;
 export const BUILDINGS = {
   hq:        { name: 'Hauptquartier', hp: 9999, sight: 4, invuln: true,
                desc: 'Sichere Zone im Umkreis von 2 Feldern: Feinde kommen nicht hinein und können nichts darin treffen. Hier wird gekauft.' },
-  fob:       { name: 'Vorposten (FOB)', cat: 'fob', hp: 320, sight: 3, cash: 7500, turns: 0, radius: 2,
+  fob:       { name: 'Vorposten (FOB)', cat: 'fob', hp: 320, sight: 3, cash: 5500, turns: 0, radius: 2,
                desc: 'Einflussbereich 2 Felder: Lager für Material, Treibstoff und Mechanik, Bauplatz für alle großen Bauten, Nachschub für Munition. Feindliche Infanterie kann die Konsole hacken.' },
   sandsack:  { name: 'Sandsackwall', cat: 'fort', tier: 1, field: true, hp: 90, sight: 1, bau: 3, turns: 1, pass: 'all', cover: 0.2, desc: 'Feldbefestigung: eigene Einheiten darauf erhalten 20 % zusätzliche Deckung.' },
   draht:     { name: 'Stacheldraht', cat: 'fort', tier: 1, field: true, hp: 60, sight: 1, bau: 2, turns: 1, pass: 'all', wire: true, desc: 'Feindliche Infanterie braucht 2 Bewegung extra, um hindurchzukommen.' },
@@ -268,7 +269,7 @@ export const BUILDINGS = {
   lautsprecher: { name: 'Lautsprecher', cat: 'sup', tier: 2, hp: 110, sight: 5, bau: 20, turns: 2, desc: 'Mast mit Lautsprechern: Beobachtungsposten mit Sicht 5. Eigene Trupps im Umkreis 1 kämpfen mit +10 % Schaden.' },
   bremer:    { name: 'Bremer-Wand', cat: 'fort', tier: 3, hp: 480, sight: 1, bau: 25, turns: 3, desc: 'Hohe Betonwand: sperrt das Feld, nicht zu überklettern, 7 C4-Ladungen stark.' },
   bunker:    { name: 'Bunker', cat: 'fort', tier: 3, hp: 380, sight: 2, bau: 20, turns: 3, pass: 'ownInf', cover: 0.5, desc: 'Eigene Infanterie darin erhält 50 % Deckung.' },
-  turm:      { name: 'Aufklärungsturm', cat: 'fort', tier: 3, hp: 200, sight: 5, bau: 20, turns: 3, pass: 'ownInf', cover: 0.15, tower: true, desc: 'Erhöhter Posten: eigene Infanterie darauf sieht 2 Felder weiter, Scharfschützen schießen 1 Feld weiter.' },
+  turm:      { name: 'Aufklärungsturm', cat: 'fort', tier: 3, hp: 200, sight: 5, bau: 20, turns: 3, pass: 'ownInf', cover: -0.25, tower: true, desc: 'Erhöhter Posten: eigene Infanterie darauf sieht 3 Felder weiter, steht aber exponiert (+25 % Schaden), Scharfschützen schießen 1 Feld weiter.' },
   schutz:    { name: 'Schutzraum', cat: 'fort', tier: 3, hp: 400, sight: 1, bau: 20, turns: 3, pass: 'ownInf', cover: 0.25, shelter: true, desc: 'Gegen indirektes Feuer: Eigene Trupps darin nehmen keinen Schaden durch Artillerie, Mörser und Splitter.' },
   stingray:  { name: 'Stingray-Werfer', cat: 'def', tier: 3, hp: 150, sight: 3, bau: 30, turns: 3, weapon: 'stingray', desc: 'FPV-Drohnen gegen Fahrzeuge, Reichweite 5. Jede Drohne kostet 5 Mechanik aus dem Lager, 25 % Fehlschläge.' },
   moerser:   { name: 'L81-Mörser', cat: 'def', tier: 3, hp: 140, sight: 2, bau: 30, turns: 3, weapon: 'mortar', desc: 'Indirektes Feuer, Reichweite 2–4, trifft Nachbarfelder mit. Jeder Schuss kostet 3 Material.' },
@@ -283,18 +284,18 @@ export const BUILD_LIST = ['sandsack', 'draht', 'igel', 'zelt', 'hesco_s', 'tuer
 export const HAMMER_NAME = { 1: 'Kleiner Hammer', 2: 'Mittlerer Hammer', 3: 'Großer Hammer' };
 
 export const PALLETS = {
-  bau:   { name: 'Materialpalette', icon: '▦', cost: 400, amount: 100, unit: 'Material', desc: '+100 Material für das FOB-Lager' },
-  sprit: { name: 'Treibstoffpalette', icon: '⛽', cost: 400, amount: 3, unit: 'Treibstoff', desc: '+3 Treibstoff für Bohrturm und Tankstation' },
-  kiste: { name: 'Versorgungskiste', icon: '✚', cost: 400, amount: 3, unit: 'Versorgung', desc: 'Überall abwerfbar, auch aus der Luft: versorgt Trupps daneben 3 Runden lang' },
-  mech:  { name: 'Mechanikpalette', icon: '⚙', cost: 400, amount: 20, unit: 'Mechanik', desc: '+20 Mechanik für Reparaturstation und Stingray' },
+  bau:   { name: 'Materialpalette', icon: '▦', cost: 300, amount: 100, unit: 'Material', desc: '+100 Material für das FOB-Lager' },
+  sprit: { name: 'Treibstoffpalette', icon: '⛽', cost: 300, amount: 3, unit: 'Treibstoff', desc: '+3 Treibstoff für Bohrturm und Tankstation' },
+  kiste: { name: 'Versorgungskiste', icon: '✚', cost: 300, amount: 3, unit: 'Versorgung', desc: 'Überall abwerfbar, auch aus der Luft: versorgt Trupps daneben 3 Runden lang' },
+  mech:  { name: 'Mechanikpalette', icon: '⚙', cost: 300, amount: 20, unit: 'Mechanik', desc: '+20 Mechanik für Reparaturstation und Stingray' },
 };
 
 export const PAY = {
-  cz: 160,            // je Kopf in der Control Zone pro Wertung
-  hz: 320,            // je Kopf in der Hot Zone pro Wertung
-  killInf: 1500, killVeh: 3200, killAir: 3600, killBld: 600,
-  revive: 500, heal: 400, transport: 350, transportHz: 500, hammer: 40, built: 150,
-  pallet: 1500,       // Lieferprämie je Palette im FOB-Bereich nahe der Zone
+  cz: 120,            // je Kopf in der Control Zone pro Wertung
+  hz: 240,            // je Kopf in der Hot Zone pro Wertung
+  killInf: 900, killVeh: 2000, killAir: 2200, killBld: 400,
+  revive: 400, heal: 250, transport: 250, transportHz: 400, hammer: 40, built: 150,
+  pallet: 900,        // Lieferprämie je Palette im FOB-Bereich nahe der Zone
   hackFob: 2500,
 };
 export const START_CASH = 10000;
@@ -329,10 +330,10 @@ export const TRACKS = {
 };
 export const TRACK_KEYS = ['assault', 'medic', 'recon', 'support', 'driver', 'pilot'];
 // Erfahrungskurve: Gesamt-XP für Stufe L
-export const xpForLevel = (L) => 25 * L + 5 * L * L;
+export const xpForLevel = (L) => 20 * L + 2 * L * L;
 export function levelOf(xp) { let L = 0; while (L < 40 && xp >= xpForLevel(L + 1)) L++; return L; }
 // Freischaltgebühr (einmalig, vom Konto)
-export function unlockFee(item) { if (!item.lvl) return 0; const k = item.lvl < 10 ? 2 : item.lvl < 20 ? 3 : 4; return Math.max(1000, Math.round(item.price * k / 500) * 500); }
+export function unlockFee(item) { if (!item.lvl) return 0; return Math.max(250, Math.round(item.price * (0.6 + item.lvl / 50) / 50) * 50); }
 // Katalog aller freischaltbaren Dinge
 export function catalog() {
   const out = [];

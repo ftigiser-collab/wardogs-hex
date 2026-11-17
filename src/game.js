@@ -165,6 +165,9 @@ export class Game {
     const b = this.buildingAt(u.c, u.r);
     const tent = inf && b && b.def.tent && b.owner === u.owner && b.turnsLeft <= 0 && !u.attacked;
     const facStealth = inf && ((this.players[u.owner].perk.infStealth && TERRAIN[this.terr(u.c, u.r)].cover) || u.def.ghillie || tent) && (!u.attacked || u.def.silent);
+    // Wald: Infanterie, die nicht geschossen hat, ist nur aus 2 Feldern Nähe zu sehen
+    const hide = inf && !u.attacked && TERRAIN[this.terr(u.c, u.r)].hide;
+    if (hide && !st && !facStealth) return !this.units.some((p) => !p.dead && p.owner === viewer && !p.carried && distance(p.c, p.r, u.c, u.r) <= hide) && !this.buildings.some((b) => !b.dead && b.owner === viewer && distance(b.c, b.r, u.c, u.r) <= 1);
     if (!st && !facStealth) return false;
     if (st === 'still' && (u.moved || (u.attacked && !u.def.silent)) && !facStealth) return false;
     return !this.units.some((p) => !p.dead && p.owner === viewer && !p.carried && distance(p.c, p.r, u.c, u.r) <= 1);
@@ -363,9 +366,10 @@ export class Game {
   // Reichweite mit Turm-Bonus (Scharfschützen auf eigenem Aufklärungsturm +1)
   effWeapon(e, c, r) {
     const w = this.weapon(e); if (!w || !e.isUnit || e.def.cat !== 'inf') return w;
+    if (w.range[1] < 2) return w;   // Nahkampfwaffen profitieren nicht
     const b = this.buildingAt(c, r);
-    if (b && b.def.tower && b.owner === e.owner && b.turnsLeft <= 0 && (w.type === 'sniper' || w.type === 'amr' || w.type === 'rifle')) return { ...w, range: [w.range[0], w.range[1] + 1] };
-    return w;
+    const high = (b && b.def.tower && b.owner === e.owner && b.turnsLeft <= 0) || this.towerAt(c, r) || (TERRAIN[this.terr(c, r)].range || 0) > 0;
+    return high ? { ...w, range: [w.range[0], w.range[1] + 1] } : w;
   }
   inSmoke(c, r) { return this.smoke.some((s) => distance(s.c, s.r, c, r) <= 1); }
   targetsFrom(e, c, r, onlyVisible = e.owner === 0) {
@@ -387,10 +391,14 @@ export class Game {
   }
   coverAt(t) {
     if (t.isBuilding || this.isAir(t) || t.chute) return 0;
+    if (this.towerAt(t.c, t.r)) return -0.3;                 // oben auf dem Funkturm: weithin sichtbar, keine Deckung
     let d = TERRAIN[this.terr(t.c, t.r)].def;
-    const b = this.buildingAt(t.c, t.r); if (b && b.def.pass && b.owner === t.owner && b.turnsLeft <= 0) d += b.def.cover || 0;
-    return Math.min(0.7, d);
+    if (t.def && t.def.cat !== 'inf' && d > 0) d *= 0.5;     // Fahrzeuge profitieren nur halb vom Gelände
+    const b = this.buildingAt(t.c, t.r); if (b && b.def.pass && b.owner === t.owner && b.turnsLeft <= 0) d = b.def.tower ? b.def.cover : d + (b.def.cover || 0);
+    return Math.max(-0.3, Math.min(0.75, d));
   }
+  // erhöhte Position: Funkturm oder eigener Aufklärungsturm
+  onTower(e) { if (!e.isUnit || e.def.cat !== 'inf') return false; if (this.towerAt(e.c, e.r)) return true; const b = this.buildingAt(e.c, e.r); return !!(b && b.def.tower && b.owner === e.owner && b.turnsLeft <= 0); }
   calcDamage(att, t, attHp = att.hp, ammoType = att.ammoType) {
     const w = this.weapon(att); if (!w || !this.canHit(w, t)) return 0;
     if (t.isUnit && t.downed) return 100;
@@ -525,9 +533,7 @@ export class Game {
     const ev = [];
     if (mover.dead || mover.carried) return ev;
     if (this.inSafe(mover.c, mover.r, mover.owner)) return ev;
-    const ct = this.coalition ?? -1;
-    // KI-Verbündete der Koalition geben sich gegenseitig kein Reaktionsfeuer
-    const shooters = [...this.units, ...this.buildings].filter((e) => !e.dead && e.reflex && e.owner !== mover.owner && !(e.isUnit && (e.carried || e.downed)) && !(ct >= 0 && e.owner !== 0 && e.owner !== ct && mover.owner !== ct));
+    const shooters = [...this.units, ...this.buildings].filter((e) => !e.dead && e.reflex && e.owner !== mover.owner && !(e.isUnit && (e.carried || e.downed)));
     for (const s of shooters) {
       if (mover.dead || mover.downed) break;
       const w = this.weapon(s);
@@ -1096,14 +1102,14 @@ export class Game {
   }
 
   // ---------- Tageszeit ----------
-  dayPhase(round = this.round) { return ['morgen', 'tag', 'tag', 'tag', 'abend', 'nacht', 'nacht', 'morgen'][(round - 1) % 8]; }
-  isNight() { return this.dayPhase() === 'nacht'; }
+  dayPhase() { return 'tag'; }
+  isNight() { return false; }
 
   // ---------- Sicht ----------
   sightOf(e) {
     if (e.isBuilding) return e.def.sight || 1;
     let s = e.def.sight + (RANKS[e.rank || 0].sight || 0);
-    if (e.def.mt !== 'air') { s += TERRAIN[this.terr(e.c, e.r)].sight || 0; if (this.isNight()) s -= 1; }
+    if (e.def.mt !== 'air') s += this.onTower(e) ? 3 : (TERRAIN[this.terr(e.c, e.r)].sight || 0);
     if (this.weather === 'regen') s -= 1;
     if (e.downed) s = 1;
     return Math.max(1, s);

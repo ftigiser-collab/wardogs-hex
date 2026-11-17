@@ -60,7 +60,7 @@ export class Controller {
     const dusty = (h) => { const t = this.g.terr(h.c, h.r); return t === 'feld' || t === 'huegel' || t === 'truemmer'; };
     // Eigene Einheiten decken während der Bewegung auf, Feld für Feld (kein Verschwinden im Schwarz)
     const g = this.g, revealed = new Set();
-    const sight = u.owner === 0 && !u.carried ? Math.max(1, u.def.sight + (RANKS[u.rank || 0].sight || 0) - (g.isNight() && u.def.mt !== 'air' ? 1 : 0)) : 0;
+    const sight = u.owner === 0 && !u.carried ? g.sightOf(u) : 0;
     const revealAt = (j) => {
       if (!sight || revealed.has(j)) return; revealed.add(j);
       const h = path[j]; let changed = false;
@@ -703,7 +703,7 @@ export class Controller {
     g.updateVision(); this.r.fogDirty = true;
     this.refresh();
     const pos = g.orderFor(g.round).indexOf(0) + 1;
-    await this.banner(`Runde ${g.round}`, `Euer Zug (${pos}. von 3)${g.isNight() ? ' · Nacht: Bodensicht −1' : ''}`, 0.9, g.players[0].faction);
+    await this.banner(`Runde ${g.round}`, `Euer Zug (${pos}. von 3)${g.weather === 'regen' ? ' · Regen: Sicht −1' : ''}`, 0.9, g.players[0].faction);
     if (this.rallyUnits().some((u) => u.rally)) { this.busy = false; await this.rallyStep(); }
     this.busy = false;
     $('#endturn').disabled = false;
@@ -907,7 +907,7 @@ export class Controller {
   refresh() {
     const g = this.g, p = g.players[0];
     $('#round').textContent = g.round;
-    const ph = g.dayPhase(); const tz = $('#daytime'); if (tz) { tz.textContent = { morgen: 'Morgen', tag: 'Tag', abend: 'Abend', nacht: 'Nacht' }[ph] + (g.weather === 'regen' ? ' · Regen' : ''); tz.parentElement.classList.toggle('night', ph === 'nacht'); }
+    const tz = $('#daytime'); if (tz) { tz.textContent = g.weather === 'regen' ? `Regen (${g.weatherT || 1})` : 'Klar'; tz.parentElement.classList.toggle('night', g.weather === 'regen'); }
     $('#credits').textContent = money(p.credits);
     g.updateHeads();
     const lead = g.leader();
@@ -1027,7 +1027,9 @@ export class Controller {
       const chips = [];
       if (g.inHZ(e.c, e.r)) chips.push('<span class="chip hz">HZ ×2</span>'); else if (g.inCZ(e.c, e.r)) chips.push('<span class="chip cz">CZ</span>');
       if (own) chips.push(`<span class="chip">${e.acted ? 'fertig' : e.fresh ? 'ab nächster Runde' : e.moved ? 'bewegt' : `Bew. ${g.moveOf(e)}`}</span>`);
-      if (w) chips.push(`<span class="chip" title="Stärke · Reichweite">⌖ ${w.power} · R${w.range[0] === w.range[1] ? w.range[0] : w.range.join('–')}</span>`);
+      const ew = g.effWeapon(e, e.c, e.r) || w;
+      if (ew) chips.push(`<span class="chip" title="Stärke · Reichweite">⌖ ${ew.power} · R${ew.range[0] === ew.range[1] ? ew.range[0] : ew.range.join('–')}${ew !== w && ew.range[1] > w.range[1] ? '↑' : ''}</span>`);
+      if (e.def.mt !== 'air' && !e.carried) { const cv = Math.round(g.coverAt(e) * 100); chips.push(`<span class="chip ${cv < 0 ? 'warn' : cv >= 35 ? 'cz' : ''}" title="Deckung am Standort (negativ = mehr Schaden)">${g.onTower(e) ? 'Turm · Sicht +3' : TERRAIN[g.terr(e.c, e.r)].name} ${cv > 0 ? '+' : ''}${cv} %</span>`); }
       if (e.def.ammo) chips.push(`<span class="chip">▮ ${e.ammo}/${e.def.ammo}</span>`);
       if (e.def.transport) chips.push(`<span class="chip">👥 ${(e.passengers || []).length}/${e.def.transport}</span>`);
       if (e.def.pallets) chips.push(`<span class="chip">▦ ${(e.cargoP || []).length}/${e.def.pallets}</span>`);

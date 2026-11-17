@@ -59,12 +59,17 @@ export async function aiTurn(g, act, owner) {
   if (ctx.target >= 0 && ctx.target !== owner) {
     const tgtIn = g.units.filter((e) => !e.dead && !e.carried && !e.downed && e.owner === ctx.target && g.inCZ(e.c, e.r)).length;
     const hq = ctx.hq || { c: 0, r: 0 };
-    // Sammelpunkt: am Zonenrand auf der eigenen Seite
-    const ang = Math.atan2(hq.r - g.hz.r, hq.c - g.hz.c), d = g.cz.rad + 2;
-    let rc = Math.round(g.hz.c + Math.cos(ang) * d), rr = Math.round(g.hz.r + Math.sin(ang) * d);
+    // Sammelpunkt: innen am Rand der CZ auf der eigenen Seite (zählt schon für die Punkte), begehbar
+    const ang = Math.atan2(hq.r - g.cz.r, hq.c - g.cz.c), d = Math.max(1, g.cz.rad - 1);
+    let rc = Math.round(g.cz.c + Math.cos(ang) * d), rr = Math.round(g.cz.r + Math.sin(ang) * d);
     rc = Math.max(1, Math.min(g.W - 2, rc)); rr = Math.max(1, Math.min(g.H - 2, rr));
+    if (!g.inCZ(rc, rr) || g.cost('foot', rc, rr) === Infinity) {
+      let best = null, bd = Infinity;
+      for (let r = 0; r < g.H; r++) for (let c = 0; c < g.W; c++) { if (!g.inCZ(c, r) || g.inHZ(c, r) || g.cost('foot', c, r) === Infinity) continue; const dd = distance(c, r, rc, rr); if (dd < bd) { bd = dd; best = [c, r]; } }
+      if (best) [rc, rr] = best;
+    }
     const fighters = g.ownUnits(owner).filter((u) => !u.carried && !u.downed && !u.def.builder && g.weapon(u) && !g.isAir(u) && !u.def.spawnPoint && !(g.weapon(u).noMoveFire));
-    const near = fighters.filter((u) => distance(u.c, u.r, rc, rr) <= 3 || g.inCZ(u.c, u.r)).length;
+    const near = fighters.filter((u) => distance(u.c, u.r, rc, rr) <= 3 || g.inHZ(u.c, u.r)).length;
     const need = Math.max(4, Math.min(10, Math.ceil(tgtIn * 0.45)));
     me.ai = me.ai || {};
     const partnerStorms = g.players.some((x) => x.id !== owner && x.id !== ctx.target && x.ai && x.ai.storm);
@@ -225,7 +230,7 @@ async function combatTurn(g, act, u, ctx) {
     return;
   }
   // Koalition: am Sammelpunkt warten, bis genug zusammen sind
-  if (ctx.rally && !g.inCZ(u.c, u.r) && !u.def.builder && !u.def.medic) {
+  if (ctx.rally && !g.inHZ(u.c, u.r) && !u.def.builder && !u.def.medic) {
     const R = ctx.rally;
     if (distance(u.c, u.r, R.c, R.r) > 2) await moveToward(g, act, u, R.c, R.r, reach);
     else {
@@ -561,7 +566,7 @@ async function aiShop(g, act, owner, ctx) {
   const tryBuy = (t) => {
     if (!t) return false;
     let type = t, lo = null;
-    if (TEMPLATES[t] || t === 'rekrut') { lo = t === 'rekrut' ? g.defaultLoadout(owner, t) : templateLoadout(t, (id) => g.canUse(owner, id), Math.max(700, (p.credits - reserve) * 0.3)); if (!lo) return false; type = t === 'rekrut' ? 'rekrut' : roleOf(lo); if (!lo.free && units.some((x) => UNITS[x.type].mt === 'air' && x.def.transport)) lo = { ...lo, chute: true }; }
+    if (TEMPLATES[t] || t === 'rekrut') { lo = t === 'rekrut' ? g.defaultLoadout(owner, t) : templateLoadout(t, (id) => g.canUse(owner, id), Math.max(700, (p.credits - reserve) * Math.min(0.6, 0.3 + p.credits / 80000))); if (!lo) return false; type = t === 'rekrut' ? 'rekrut' : roleOf(lo); if (!lo.free && units.some((x) => UNITS[x.type].mt === 'air' && x.def.transport)) lo = { ...lo, chute: true }; }
     const d = UNITS[type]; if (!d || d.noBuy) return false;
     if (d.cat === 'inf' ? inf.length + bought >= 22 && type !== 'pionier' : units.length + bought >= 32) return false;
     const at = d.cat === 'inf' && spzFwd ? 'spz' : 'hq';

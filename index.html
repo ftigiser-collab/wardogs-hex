@@ -21,7 +21,7 @@
     <div class="brand"><span id="mycrest"></span>HUNDEMARKE</div>
     <div class="stat"><span class="lbl">Runde</span><b id="round">1</b></div>
     <div class="stat cash"><span class="lbl">Kasse</span><b id="credits">$0</b></div>
-    <div class="stat dt"><span class="lbl">Tageszeit</span><b id="daytime">Morgen</b></div>
+    <div class="stat dt"><span class="lbl">Wetter</span><b id="daytime">Klar</b></div>
     <div id="score"></div>
     <div id="code" class="stat"></div>
     <div id="control"></div>
@@ -75,7 +75,7 @@
       <h3>Geld ist alles</h3>
       <ul>
         <li><b>Kasse in Dollar:</b> Jede Einheit wird am HQ gekauft und ist ab der nächsten Runde einsatzbereit. Geht sie verloren, ist das Geld weg.</li>
-        <li><b>Einnahmen:</b> $160 je Kopf in der CZ und $320 je Kopf in der HZ pro Wertung, Abschuss bestätigt $1.500 (Fahrzeuge $3.200, Hubschrauber $3.600), Ausschalten $400, Wiederbeleben $500, Verbinden $400, Transport in die Zone $350 (HZ $500), Palettenlieferung $1.500, Hämmern und Bauen.</li>
+        <li><b>Einnahmen:</b> $120 je Kopf in der CZ und $240 je Kopf in der HZ pro Wertung, Abschuss bestätigt $900 (Fahrzeuge $2.000, Hubschrauber $2.200), Ausschalten $400, Wiederbeleben $400, Verbinden $250, Transport in die Zone $250 (HZ $400), Palettenlieferung $900, Hämmern und Bauen.</li>
         <li><b>Konto:</b> Im Einsatzmodus „Konto“ startet ihr mit eurem Kontostand und nehmt das Restgeld plus Teambeitrag (Platz 1: $5.000, Platz 2: $2.500, Platz 3: $1.000) mit in den nächsten Einsatz. Nie unter $5.000.</li>
         <li><b>Rekrutenrabatt:</b> Bis Wardog-Stufe 9 kostet die Infanterie-Ausrüstung nur die Hälfte.</li>
         <li><b>Kopfgeld:</b> Abschüsse und Verwundungen beim alleinigen Punkteführer bringen 50 % mehr Geld.</li>
@@ -95,14 +95,15 @@
         <li><b>Fahrzeuge aus Wardogs:</b> Bobcat, Kodiak (auch mit M249), Ural (Paletten, gepanzert, mit M249), Wolf (auch mit M2), Buggy, Pickup, Humvee (M249, Minigun), T-72, L2A6, Gepard (Flak), SPH-2-Artillerie. Hubschrauber: MH-6, AH-6 Minigun und Raketen, Lakota (auch mit Minigun), Havoc.</li>
         <li><b>Munitionswahl:</b> Handwaffen schießen FMJ (Allround), HP (+25 % gegen Infanterie, schwach gegen Panzerung) oder AP (stark gegen Fahrzeuge und Hubschrauber). Umschalten kostet nichts.</li>
         <li><b>Verwundet statt tot:</b> Infanterie auf 0 geht zu Boden und verblutet nach 2 eigenen Rundenstarts. Ein Sanitäter daneben belebt wieder. Ein weiterer Treffer erledigt den Verwundeten (Abschuss bestätigt).</li>
+        <li><b>Plätze (Trupps):</b> MH-6 3, Lakota 5 (mit Miniguns 3), Kodiak, Wolf, Pickup, Humvee 3, Ural 4, bewaffnete Varianten meist 2, M113 3.</li>
         <li><b>Transport:</b> Trupp neben das Fahrzeug stellen, „Einsteigen“, fahren, „Aussteigen“ — ausgestiegene Trupps können sofort angreifen. Wird das Fahrzeug zerstört, sterben die Insassen.</li>
         <li><b>Hubschrauber</b> nehmen Trupps nur <b>gelandet</b> auf und lassen sie nur gelandet aussteigen. Landen kostet die Bewegung, gestartet wird erst in der nächsten Runde — so lange steht der Hubschrauber verwundbar am Boden. Alternativ: <b>Fallschirmabsprung</b> aus der Luft (Fallschirm im Loadout, $50, Einweg). Der Landepunkt ist zufällig auf einem Feld daneben, die Springer hängen bis zu eurer nächsten Runde wehrlos am Schirm (+50 % Schaden, zählen nicht als Kopf). Wer heil unten ankommt, bringt in der Zone $500 (HZ $1.000) Überlebensprämie, dazu $250 je Absprung in die Zone.</li>
         <li><b>Pendelfahrten:</b> Wer mit demselben Fahrzeug immer wieder in die Zone liefert (Trupps, Paletten, Kisten), bekommt je Fahrt in Folge $200 mehr, bis zu 10 Fahrten.</li>
-        <li><b>Versorgungskiste</b> ($400): überall abwerfbar, auch aus der Luft. Trupps daneben werden 3 Runden lang zu Rundenbeginn um 20 verbunden und füllen Granaten, Minen, C4 und Rucksack auf. Abwurf in der Zone bringt Prämie.</li>
+        <li><b>Versorgungskiste</b> ($300): überall abwerfbar, auch aus der Luft. Trupps daneben werden 3 Runden lang zu Rundenbeginn um 20 verbunden und füllen Granaten, Minen, C4 und Rucksack auf. Abwurf in der Zone bringt Prämie.</li>
         <li><b>Bauten übernehmen:</b> Infanterie neben einem feindlichen Bauwerk ohne Verteidiger daneben hackt es in einer Aktion und übernimmt es (nicht HQ und FOB).</li>
         <li><b>Aufklärungs-Assist:</b> Fällt ein markierter Feind, kassiert ihr zusätzlich $800 (Fahrzeuge $1.000).</li>
         <li><b>Fahrzeugnebel:</b> Jedes Bodenfahrzeug hat eine Nebelladung (am HQ oder an der Reparaturstation neu). Sie kostet keine Aktion und hüllt das eigene Feld samt Nachbarn bis zur nächsten Runde ein.</li>
-        <li><b>Koalition:</b> Führt eine Fraktion klar (mindestens 3 Punkte und 2 vor dem Zweiten), verbünden sich die anderen gegen sie — im Punktestand mit ⚔ markiert. Die KI-Verbündeten lassen sich dann weitgehend in Ruhe und geben sich kein Reaktionsfeuer. Sie sammeln sich am Zonenrand, stürmen gemeinsam und ziehen dem Führenden per Turmcode die Hot Zone weg. Führt ihr selbst, kommen beide auf euch zu.</li>
+        <li><b>Koalition:</b> Führt eine Fraktion klar (mindestens 3 Punkte und 2 vor dem Zweiten), verbünden sich die anderen gegen sie — im Punktestand mit ⚔ markiert. Die KI-Verbündeten lassen sich dann weitgehend in Ruhe (Reaktionsfeuer gibt es trotzdem). Sie sammeln sich innen am Rand der CZ — das zählt schon für die Punkte —, stürmen gemeinsam und ziehen dem Führenden per Turmcode die Hot Zone weg. Führt ihr selbst, kommen beide auf euch zu.</li>
         <li><b>Wetter:</b> Regenfronten ziehen durch — solange es regnet, sehen alle 1 Feld weniger.</li>
         <li><b>Einsatz-SPz:</b> Sobald eine Fraktion 20 % des Punkteziels hat, bekommt jede ihren SPz. Neue Infanterie kann direkt an ihm eingesetzt werden (2 pro Runde). Unter 50 % Stärke fällt die Antenne aus, ein Pionier repariert. Zerstört: Ersatz nach 4 Runden.</li>
         <li><b>MG und Minigun</b> halten nieder: Getroffene haben in ihrer nächsten Runde 1 Bewegung weniger.</li>
@@ -111,15 +112,17 @@
       </ul>
       <h3>Vorposten (FOB) und Logistik</h3>
       <ul>
-        <li><b>FOB errichten:</b> Pionier neben ein freies Feld (mindestens 5 vom eigenen HQ und von anderen FOBs), $7.500. Einflussbereich 2 Felder, startet mit 80 Material.</li>
+        <li><b>FOB errichten:</b> Pionier neben ein freies Feld (mindestens 5 vom eigenen HQ und von anderen FOBs), $5.500. Einflussbereich 2 Felder, startet mit 80 Material.</li>
         <li><b>Drei Hämmer wie in Wardogs:</b> Klein (I) baut Sandsackwall, Stacheldraht (Infanterie kommt nur mühsam durch), Panzersperre (nur zu Fuß passierbar), Aufklärungszelt (tarnt Trupps), HESCO-Block. Mittel (II) dazu Tür (nur eigene Infanterie), Tor (eigene Einheiten), HESCO-Wall, Lautsprecher (+10 % Schaden in der Nähe). Groß (III) baut alles: Bunker, Aufklärungsturm (+1 Reichweite), Bremer-Wand, Schutzraum (immun gegen Splitter und Artillerie), Stingray-Drohnen, Mörser, Tankstation, Reparaturstation, SAM, CIWS, Bohrturm — und hämmert doppelt so schnell.</li>
         <li><b>Feldbauten:</b> Alles mit Hammer I baut der Pionier auch außerhalb des FOB — aus seinem Rucksack (20 Material, am HQ oder FOB auffüllbar). Jede Pionier-Aktion an einer Baustelle ist ein Hammerschlag (⚒).</li>
-        <li><b>Paletten:</b> Bobcat, Ural, Pickup, MH-6 oder Lakota laden in der sicheren Zone des HQ Material-, Treibstoff- oder Mechanikpaletten ($400), im FOB-Bereich abladen füllt das Lager. Treibstoff speist Bohrturm und Tankstation (+1 Bewegung für Fahrzeuge), Mechanik die Reparaturstation und die Stingray-Drohnen. Liegt der FOB nahe der Zone, gibt es $1.500 Lieferprämie je Palette.</li>
+        <li><b>Paletten:</b> Bobcat, Ural, Pickup, MH-6 oder Lakota laden in der sicheren Zone des HQ Material-, Treibstoff- oder Mechanikpaletten ($300), im FOB-Bereich abladen füllt das Lager. Treibstoff speist Bohrturm und Tankstation (+1 Bewegung für Fahrzeuge), Mechanik die Reparaturstation und die Stingray-Drohnen. Liegt der FOB nahe der Zone, gibt es $1.500 Lieferprämie je Palette.</li>
         <li><b>FOB hacken:</b> Feindliche Infanterie neben der Konsole hackt in zwei aufeinanderfolgenden Runden — dann gehören FOB, Lager und alle Stellungen ihr.</li>
       </ul>
       <h3>Gelände</h3>
       <ul>
-        <li><b>Deckung:</b> Wald 25 %, Ortschaft 35 %, Trümmer 20 %, Hügel 15 % (+1 Sicht), Felsgrat 35 % (nur zu Fuß, +1 Sicht). Räder rollen auf Straßen doppelt so weit. Den Fluss quert man nur über Brücken.</li>
+        <li><b>Gelände zählt:</b> Ortschaft 50 % Deckung, Felsgrat 45 % (nur zu Fuß, +2 Sicht, +1 Reichweite), Wald 40 % (−1 Sicht), Trümmer 35 %, Hügel 20 % (+1 Sicht, +1 Reichweite), offenes Feld 0 %. Auf Straßen (+15 % Schaden) und Brücken (+25 %) steht man ungeschützt. Fahrzeuge bekommen nur die halbe Deckung. Räder rollen auf Straßen doppelt so weit, den Fluss quert man nur über Brücken.</li>
+        <li><b>Wald:</b> Infanterie im Wald, die nicht geschossen hat, sieht man erst aus 2 Feldern Nähe — ideal für Hinterhalte.</li>
+        <li><b>Türme:</b> Auf einem Funkturm oder dem eigenen Aufklärungsturm sieht Infanterie 3 Felder weiter und schießt 1 Feld weiter — steht aber exponiert: +30 % Schaden auf dem Funkturm, +25 % auf dem Aufklärungsturm.</li>
         <li><b>Sichere Zone:</b> 2 Felder um jedes HQ. Feinde kommen nicht hinein und können nichts darin treffen. Von dort aus kann man aber auch nicht schießen.</li>
         <li><b>Tarnung:</b> Späher sind getarnt, solange sie weder ziehen noch schießen. Simurgh-Infanterie ist in Wald und Ortschaft getarnt.</li>
         <li><b>Reaktionsfeuer:</b> Wer in seiner Runde nicht angegriffen hat, feuert einmal auf Gegner, die in Reichweite ziehen (70 %).</li>
