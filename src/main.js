@@ -119,10 +119,12 @@ function showSaves() {
   el.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { deleteSlot(+b.dataset.del); showSaves(); });
 }
 $('#start').onclick = () => showSkirmish();
+// Testgefecht: normales Gefecht, alles freigeschaltet, $30.000 feste Kasse, Konto und XP bleiben unberührt
+$('#testbtn').onclick = () => start(null, true);
 $('#loadbtn').onclick = () => showSaves();
 try { const ls = sessionStorage.getItem('hundemarke-load-slot'); if (ls) { sessionStorage.removeItem('hundemarke-load-slot'); const d = ls === 'auto' ? readAuto() : readSlot(+ls); if (d) setTimeout(() => start(d), 50); } } catch {}
 
-async function start(save) {
+async function start(save, test = false) {
   $('#menu .loading').classList.add('show');
   await new Promise((r) => setTimeout(r, 50));
   let seed, map, game;
@@ -135,15 +137,19 @@ async function start(save) {
     map = generateMap(seed, W, H);
     const factions = [opts.faction, ...FAC_KEYS.filter((f) => f !== opts.faction).sort(() => Math.random() - 0.5)];
     const k = readKonto();
-    const konto = opts.cash !== 'fest';
-    game = new Game(map, { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH, unlocked: k.unlocked, levels: levelsOf(k), aiLevel: AI_LEVEL[opts.diff] ?? 18, rookie: wardogLevel(k) < 9 });
-    game.diffName = opts.diff; game.settings = { ...opts }; game.konto = konto;
+    const konto = !test && opts.cash !== 'fest';
+    const cfg = test
+      ? { diff: DIFFICULTY.normal, factions, target: TARGETS.normal, playerCash: 30000, unlocked: catalog().map((it) => it.id), levels: Object.fromEntries(TRACK_KEYS.map((t) => [t, 35])), aiLevel: AI_LEVEL.normal, rookie: false }
+      : { diff: DIFFICULTY[opts.diff], factions, target: TARGETS[opts.target] || 25, playerCash: konto ? Math.max(CASH_FLOOR, k.bank) : START_CASH, unlocked: k.unlocked, levels: levelsOf(k), aiLevel: AI_LEVEL[opts.diff] ?? 18, rookie: wardogLevel(k) < 9 };
+    game = new Game(map, cfg);
+    game.diffName = test ? 'normal' : opts.diff; game.settings = { ...opts, ...(test ? { test: true, diff: 'normal', target: 'normal', auto: opts.auto || 'an' } : {}) }; game.konto = konto;
     game.setup();
   }
   const fx = new FX();
   const renderer = new Renderer($('#game'), game, fx);
   const ctrl = new Controller(game, renderer, fx);
   ctrl.onEnd = (state) => {
+    if (game.settings?.test) return 'Testgefecht — Konto und Erfahrung bleiben unverändert.';
     const k = readKonto(), lv0 = levelsOf(k), wl0 = wardogLevel(k);
     // XP zählen immer, auch mit fester Kasse
     const gain = TRACK_KEYS.map((t) => [t, Math.round((game.xp[t] || 0) * (state === 'won' ? 1.25 : 1))]).filter(([, n]) => n > 0);
